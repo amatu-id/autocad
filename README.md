@@ -1,7 +1,7 @@
 # Amatu CAD
 
 Aplikasi CAD 2D di browser dengan tata letak, perintah, shortcut, dan gesture gaya AutoCAD.
-Live: https://liemyo.github.io/autocad/
+Live: https://amatu-id.github.io/autocad/
 
 ## Fitur utama
 - **Antarmuka**: Application menu, Quick Access Toolbar, ribbon (Home, Insert, Annotate, View, Manage, Output) dengan tab kontekstual *Hatch Creation*, file tabs, tab Model/Layout, command line mengambang dengan AutoComplete, Dynamic Input, status bar (GRID, SNAP, DYN, ORTHO, POLAR, OTRACK, OSNAP, LWT, QP), palet Properties, Layer Properties Manager.
