@@ -56,12 +56,18 @@ export class Editor {
   // ---------- Render loop ----------
   resize() {
     const s = this.size(), d = devicePixelRatio || 1;
+    if (Math.round(s.w * d) === this.cv.base.width && Math.round(s.h * d) === this.cv.base.height) return;
     for (const c of [this.cv.base, this.cv.sel, this.cv.over]) { c.width = Math.round(s.w * d); c.height = Math.round(s.h * d); c.style.width = s.w + 'px'; c.style.height = s.h + 'px'; }
     this.invalidate();
+    if (!this.inFrame) this.frame();   // resizing cleared the canvases: redraw now, not a frame later
   }
   ctx(c) { const x = c.getContext('2d'), d = devicePixelRatio || 1; x.setTransform(d, 0, 0, d, 0, 0); return x; }
   frame() {
     if (!this.doc) return;
+    this.inFrame = true;
+    try { this.frameNow(); } finally { this.inFrame = false; }
+  }
+  frameNow() {
     const s = this.size();
     if (Math.round(s.w * (devicePixelRatio || 1)) !== this.cv.base.width || Math.round(s.h * (devicePixelRatio || 1)) !== this.cv.base.height) this.resize();
     if (this.dirty.base) { this.drawBase(); this.dirty.base = false; }
