@@ -162,17 +162,26 @@ export function drawEnt(ctx, e, doc, v, opt = {}, bg = opt.bg || 'dark') {
     drawPrim(ctx, q, v);
   }
   flush();
-  if (e.type === 'image' && e.src) drawImage(ctx, e, v);
+  if (e.type === 'image' && (e.src || e.img)) drawImage(ctx, e, v, doc);
   ctx.setLineDash([]);
 }
 const imgCache = new Map();
-function drawImage(ctx, e, v) {
-  let im = imgCache.get(e.src);
-  if (!im) { im = new Image(); im.src = e.src; imgCache.set(e.src, im); im.onload = () => window.dispatchEvent(new Event('cad-regen')); }
+export const imgSrc = (e, doc) => e.img ? doc?.imgs?.[e.img] : e.src;
+function drawImage(ctx, e, v, doc) {
+  const src = imgSrc(e, doc); if (!src) return;
+  let im = imgCache.get(src);
+  if (!im) { im = new Image(); im.src = src; imgCache.set(src, im); im.onload = () => window.dispatchEvent(new Event('cad-regen')); }
   if (!im.complete || !im.naturalWidth) return;
   const [x, y] = W2S(v, e.p);
-  ctx.save(); ctx.translate(x, y); ctx.rotate(-(e.rot || 0)); ctx.globalAlpha *= (e.fade ? 1 - e.fade / 100 : 1);
-  ctx.drawImage(im, 0, -e.h * v.scale, e.w * v.scale, e.h * v.scale); ctx.restore();
+  ctx.save(); ctx.globalAlpha *= (e.fade ? 1 - e.fade / 100 : 1);
+  const sw = e.w * v.scale, sh = e.h * v.scale;
+  if (!e.rot && v.w && (sw > 4 * v.w || sh > 4 * v.h)) { // zoom dekat: gambar hanya bagian yang terlihat (hemat & aman untuk kanvas)
+    const sx = x, sy = y - sh, x1 = Math.max(sx, 0), y1 = Math.max(sy, 0), x2 = Math.min(sx + sw, v.w), y2 = Math.min(sy + sh, v.h);
+    if (x2 > x1 && y2 > y1) { const kx = im.naturalWidth / sw, ky = im.naturalHeight / sh; ctx.drawImage(im, (x1 - sx) * kx, (y1 - sy) * ky, (x2 - x1) * kx, (y2 - y1) * ky, x1, y1, x2 - x1, y2 - y1); }
+    ctx.restore(); return;
+  }
+  ctx.translate(x, y); ctx.rotate(-(e.rot || 0));
+  ctx.drawImage(im, 0, -sh, sw, sh); ctx.restore();
 }
 
 // Grid adaptif gaya AutoCAD

@@ -31,7 +31,8 @@ export class Doc {
     this.set = { ltscale: 1, ccolor: 256, clt: 'ByLayer', clw: -1, cltscale: 1, textH: 2.5, units: 'mm', prec: 2, angPrec: 0, pdmode: 0, pdsize: 0, gridX: 10, snapX: 10, polarAng: 90, mirrtext: 0, hpName: 'ANSI31', hpScale: 1, hpAng: 0, filletR: 0, chamA: 0, chamB: 0, offsetD: 10, textStyle: 'Standard' };
     this.dim = { ...DIMDEF }; this.dimRev = 1;
     this.seq = 1; this.undoS = []; this.redoS = [];
-    this.groups = {};
+    this.groups = {}; this.geo = null;
+    this.imgs = {}; // data gambar raster (key → dataURL), di luar snapshot undo
   }
   newId() { return this.seq++; }
   allEnts() { return [this.model, ...this.layouts.map(l => l.ents)].flat(); }
@@ -48,10 +49,11 @@ export class Doc {
     return e;
   }
   // ---- Undo (snapshot per perintah) ----
-  state() { return JSON.stringify({ model: this.model, layouts: this.layouts, layers: this.layers, clayer: this.clayer, blocks: this.blocks, set: this.set, dim: this.dim, ltypes: this.ltypes, seq: this.seq, groups: this.groups }); }
+  state() { return JSON.stringify({ model: this.model, layouts: this.layouts, layers: this.layers, clayer: this.clayer, blocks: this.blocks, set: this.set, dim: this.dim, ltypes: this.ltypes, seq: this.seq, groups: this.groups, geo: this.geo }); }
   load(s) {
     const o = typeof s === 'string' ? JSON.parse(s) : s;
-    Object.assign(this, { model: o.model || [], layouts: o.layouts || [newLayout('Layout1')], layers: o.layers, clayer: o.clayer || '0', blocks: o.blocks || {}, set: { ...this.set, ...o.set }, dim: { ...DIMDEF, ...o.dim }, ltypes: o.ltypes || this.ltypes, seq: o.seq || 1, groups: o.groups || {} });
+    Object.assign(this, { model: o.model || [], layouts: o.layouts || [newLayout('Layout1')], layers: o.layers, clayer: o.clayer || '0', blocks: o.blocks || {}, set: { ...this.set, ...o.set }, dim: { ...DIMDEF, ...o.dim }, ltypes: o.ltypes || this.ltypes, seq: o.seq || 1, groups: o.groups || {}, geo: o.geo || null });
+    if (o.imgs) Object.assign(this.imgs, o.imgs);
     if (!this.layers['0']) this.addLayer('0');
     this.dimRev++;
     for (const b of Object.values(this.blocks)) b.rev = (b.rev || 0) + 1;
@@ -70,7 +72,12 @@ export class Doc {
     for (const e of list) { if (e.type === 'xline' || e.type === 'ray') continue; const L = this.layers[e.layer]; if (L && (!L.on || L.frz)) continue; const b = bbox(e, this); if (bbOk(b)) bb = bbUnion(bb, b); }
     return bb;
   }
-  toFile() { return JSON.stringify({ app: 'AmatuCAD', ver: 1, name: this.name, ...JSON.parse(this.state()) }); }
+  imgKeys() { const s = new Set(); const scan = l => l.forEach(e => { if (e.type === 'image' && e.img) s.add(e.img); }); scan(this.model); this.layouts.forEach(L => scan(L.ents)); Object.values(this.blocks).forEach(b => scan(b.ents || [])); return [...s]; }
+  toFile(opt = {}) {
+    const o = { app: 'AmatuCAD', ver: 1, name: this.name, ...JSON.parse(this.state()) };
+    if (!opt.noImgs) { const im = {}; for (const k of this.imgKeys()) if (this.imgs[k]) im[k] = this.imgs[k]; if (Object.keys(im).length) o.imgs = im; }
+    return JSON.stringify(o);
+  }
 }
 
 // ---------- Layout & kop gambar ----------

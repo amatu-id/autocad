@@ -12,6 +12,7 @@ Live: https://amatu-id.github.io/autocad/
 - **Seleksi**: klik, Window (kiri→kanan), Crossing (kanan→kiri), Lasso (tekan-seret), Fence, WPolygon, CPolygon, ALL, Last, Previous, Quick Select, Select Similar.
 - **Gambar kerja**: Layout dengan viewport berskala & kop gambar Indonesia, Plot (Ctrl+P) ke PDF vektor multi-lembar, SVG, PNG.
 - **Ekspor/Impor**: DXF untuk AutoCAD R12, 2000, 2004, 2007, 2010, 2013, 2018–2027 (template tervalidasi, dimensi/hatch/blok asli), impor DXF, SketchUp via COLLADA (.dae) dengan ekstrusi, format native `.amcad`.
+- **Google Maps & Site Plan** (Insert → Location, perintah `GEOMAP`/`PETA`, `GEOMAPIMAGE`, `SITEPLAN`): cari lokasi / tempel link Google Maps, pilih area persegi atau gambar batas lahan, lalu *Capture* — foto satelit/peta diplot dengan skala riil (WGS84 → bidang lokal, galat matematis < 1 mm, terverifikasi terhadap jarak geodesik Vincenty), tracing otomatis bangunan/jalan/air/hijau dari peta Google, batas lahan + ukuran riil (m), luas & keliling, tabel koordinat UTM / TM-3 BPN, arah utara, skala grafis, layout A3 siap plot (foto ikut di PDF). Capture berikutnya otomatis menyambung di koordinat yang sama.
 - **Pustaka blok**: pintu, jendela, sanitair, furnitur, kendaraan, pohon, simbol (arah utara, elevasi, potongan), kolom, tangga.
 
 ## Shortcut

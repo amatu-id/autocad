@@ -1,7 +1,7 @@
 // Plot & ekspor: PDF vektor (gambar kerja + kop), SVG, PNG, COLLADA (.dae untuk SketchUp).
 import { TAU, M, D2R, polar, sweepOf, an, bbOk, polyArea, inPoly, dist } from './geom.js';
 import { prims, xformPrim, textW, ACI, LTYPES, CAP, loopPts } from './ent.js';
-import { walk, drawLayout, styleOf } from './render.js';
+import { walk, drawLayout, styleOf, imgSrc } from './render.js';
 import { paperSize, fitVp, titleBlockEnts, layoutFrame, newLayout, PREF_SCALES, UNIT_MM } from './doc.js';
 
 const hex2rgb = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
@@ -26,6 +26,13 @@ export function plotPage(L, doc, sink, opt = {}) {
   const [W, H] = paperSize(L), vp = fitVp(L, doc), m = vpMatrix(vp);
   sink.begin(W, H);
   sink.clip(vp.x, vp.y, vp.w, vp.h);
+  if (sink.image) for (const e of doc.model) { // gambar raster (foto peta) di bawah garis
+    if (e.type !== 'image') continue;
+    const Ly = doc.layers[e.layer]; if (Ly && (!Ly.on || Ly.frz || Ly.plot === false)) continue;
+    const src = imgSrc(e, doc); if (!src) continue;
+    const r = e.rot || 0, P = M.ap(m, e.p), U = M.vec(m, { x: Math.cos(r) * e.w, y: Math.sin(r) * e.w }), V = M.vec(m, { x: -Math.sin(r) * e.h, y: Math.cos(r) * e.h });
+    sink.image(src, P, U, V, e.fade || 0);
+  }
   const sOpt = { ...opt, ltk: 1 / (doc.set.ltscale || 1) }; // PSLTSCALE=1: pola mengikuti ukuran kertas
   for (const { q, st } of walk(doc.model, doc, { plot: true })) {
     if (q.frame) continue;
@@ -91,16 +98,30 @@ class PDFSink {
       o.push(`BT /F1 ${f2(fs)} Tf ${f2(c * wf)} ${f2(sn * wf)} ${f2(-sn)} ${f2(c)} ${f2(x * PT)} ${f2(y * PT)} Tm ${pdfStr(q.s)} Tj ET`);
     }
   }
+  image(src, P, U, V, fade = 0) {
+    this.imgs ||= []; let id = this.imgs.findIndex(x => x.src === src && x.fade === fade); if (id < 0) { this.imgs.push({ src, fade }); id = this.imgs.length - 1; }
+    (this.cur.im ||= new Set()).add(id);
+    this.cur.ops.push(`q ${f2(U.x * PT)} ${f2(U.y * PT)} ${f2(V.x * PT)} ${f2(V.y * PT)} ${f2(P.x * PT)} ${f2(P.y * PT)} cm /Im${id} Do Q`); this.last = {};
+  }
   end() { }
   async build(meta = {}) {
     const objs = [], add = s => { objs.push(s); return objs.length; };
     const catalog = add(''), pagesId = add(''), font = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-    const enc = new TextEncoder(), kids = [], streams = [];
+    const enc = new TextEncoder(), kids = [], streams = [], imIds = [];
+    for (const { src, fade } of this.imgs || []) { // XObject JPEG (DCTDecode); fade = dicampur putih
+      try {
+        const im = new Image(); im.src = src; await im.decode();
+        const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0);
+        if (fade > 0) { x.globalAlpha = Math.min(0.9, fade / 100); x.fillRect(0, 0, c.width, c.height); x.globalAlpha = 1; }
+        const b = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9)), data = new Uint8Array(await b.arrayBuffer());
+        const id = add(null); streams.push({ id, data, filter: '', dict: `/Type /XObject /Subtype /Image /Width ${c.width} /Height ${c.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode ` }); imIds.push(id);
+      } catch { imIds.push(0); }
+    }
     for (const pg of this.pages) {
       let data = enc.encode(pg.ops.join('\n')), filter = '';
       if (typeof CompressionStream !== 'undefined') { try { data = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer()); filter = ' /Filter /FlateDecode'; } catch { } }
       const sid = add(null); streams.push({ id: sid, data, filter });
-      kids.push(add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${f2(pg.W * PT)} ${f2(pg.H * PT)}] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${sid} 0 R >>`));
+      kids.push(add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${f2(pg.W * PT)} ${f2(pg.H * PT)}] /Resources << /Font << /F1 ${font} 0 R >>${pg.im?.size ? ' /XObject << ' + [...pg.im].filter(i => imIds[i]).map(i => `/Im${i} ${imIds[i]} 0 R`).join(' ') + ' >>' : ''} >> /Contents ${sid} 0 R >>`));
     }
     objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
     objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map(k => k + ' 0 R').join(' ')}] /Count ${kids.length} >>`;
@@ -111,7 +132,7 @@ class PDFSink {
     objs.forEach((o, i) => {
       offs[i] = pos;
       const st = streams.find(s => s.id === i + 1);
-      if (st) { push(`${i + 1} 0 obj\n<< /Length ${st.data.length}${st.filter} >>\nstream\n`); push(st.data); push('\nendstream\nendobj\n'); }
+      if (st) { push(`${i + 1} 0 obj\n<< ${st.dict || ''}/Length ${st.data.length}${st.filter} >>\nstream\n`); push(st.data); push('\nendstream\nendobj\n'); }
       else push(`${i + 1} 0 obj\n${o}\nendobj\n`);
     });
     const xref = pos;
@@ -146,6 +167,7 @@ class SVGSink {
       o.push(`<text transform="translate(${f2(q.p.x)} ${f2(q.p.y)}) rotate(${f2(r)}) scale(${f2(q.wf || 1)} -1)" x="0" y="${f2(-by)}" font-family="Arial, Helvetica, sans-serif" font-size="${f2(q.h / CAP)}" text-anchor="${['start', 'middle', 'end'][q.ha || 0]}" ${this.st(s, true)}>${esc}</text>`);
     }
   }
+  image(src, P, U, V, fade = 0) { this.out.push(`<image opacity="${f2(1 - Math.min(0.9, fade / 100))}" href="${src}" width="1" height="1" preserveAspectRatio="none" transform="matrix(${f2(U.x)} ${f2(U.y)} ${f2(-V.x)} ${f2(-V.y)} ${f2(P.x + V.x)} ${f2(P.y + V.y)})"/>`); }
   end() { this.out.push('</g></svg>'); }
   build() { return new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n' + this.out.join('\n')], { type: 'image/svg+xml' }); }
 }

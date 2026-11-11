@@ -12,6 +12,7 @@ import { $, h, win, toast, sel, num, chk } from './dom.js';
 import { icon } from './icons.js';
 import { buildSample } from './sample.js';
 import * as D from './dialogs.js';
+import { openGeoMap } from './geomap.js';
 
 // ---------- penyimpanan (IndexedDB) ----------
 const idb = (() => {
@@ -111,24 +112,37 @@ class App {
   }
   autosave() {
     if (!this.ed.opt.autosave) return;
-    for (const d of this.docs) if (d.dirty || !d._stored) { idb.put(d.key, { name: d.name, data: d.toFile(), ts: Date.now(), fmt: d.fileFmt || 'amcad' }); d._stored = true; }
+    for (const d of this.docs) if (d.dirty || !d._stored) { this.storeDoc(d); d._stored = true; }
     this.persistSession();
   }
   persistSession() {
     LS.set('amatucad-session', { keys: this.docs.filter(d => d.model.length || d.dirty).map(d => d.key), cur: this.doc?.key });
     LS.set('amatucad-toggles', this.ed.T); LS.set('amatucad-osnap', [...this.ed.os]);
-    for (const d of this.docs) if (d.model.length && (d.dirty || !d._stored)) { idb.put(d.key, { name: d.name, data: d.toFile(), ts: Date.now() }); d._stored = true; }
+    for (const d of this.docs) if (d.model.length && (d.dirty || !d._stored)) { this.storeDoc(d); d._stored = true; }
+  }
+  storeDoc(d) {
+    const keys = d.imgKeys();
+    d._imgSaved ||= new Set();
+    for (const k of keys) if (!d._imgSaved.has(k) && d.imgs[k]) { idb.put('img|' + k, { img: d.imgs[k], ts: 0 }); d._imgSaved.add(k); }
+    idb.put(d.key, { name: d.name, data: d.toFile({ noImgs: true }), ts: Date.now(), fmt: d.fileFmt || 'amcad', imgKeys: keys });
+  }
+  async loadImgs(d, keys) {
+    let n = 0; d._imgSaved ||= new Set();
+    for (const k of keys || []) { if (d.imgs[k]) continue; const r = await idb.get('img|' + k); if (r?.img) { d.imgs[k] = r.img; d._imgSaved.add(k); n++; } }
+    if (n) this.ed.invalidate();
   }
   saveOpts() { LS.set('amatucad-opt', this.ed.opt); }
   async restore() {
     const S = LS.get('amatucad-session', null);
-    const all = (await idb.all()).sort((a, b) => b.ts - a.ts);
+    const raw = await idb.all(), all = raw.filter(x => !String(x.key).startsWith('img|')).sort((a, b) => b.ts - a.ts);
     this.recent = all;
-    // pangkas riwayat lama
+    // pangkas riwayat lama + gambar raster yang tak lagi dipakai dokumen mana pun
     all.slice(30).forEach(x => idb.del(x.key));
+    const used = new Set(all.slice(0, 30).flatMap(x => x.imgKeys || []));
+    raw.filter(x => String(x.key).startsWith('img|') && !used.has(String(x.key).slice(4))).forEach(x => idb.del(x.key));
     if (S && S.keys?.length) {
       const docs = [];
-      for (const k of S.keys) { const r = all.find(x => x.key === k); if (!r) continue; try { const d = this.makeDoc(r.name); d.key = k; d.load(JSON.parse(r.data)); d._stored = true; docs.push(d); } catch (e) { console.warn(e); } }
+      for (const k of S.keys) { const r = all.find(x => x.key === k); if (!r) continue; try { const d = this.makeDoc(r.name); d.key = k; d.load(JSON.parse(r.data)); d._stored = true; docs.push(d); this.loadImgs(d, r.imgKeys); } catch (e) { console.warn(e); } }
       if (docs.length) {
         this.docs = docs; this.doc = docs.find(d => d.key === S.cur) || docs[0];
         this.ui.refresh(); setTimeout(() => this.ed.zoomExtents(), 50);
@@ -143,7 +157,7 @@ class App {
   async openRecent(key) {
     const open = this.docs.findIndex(d => d.key === key); if (open >= 0) { this.switchDoc(open); return; }
     const r = await idb.get(key); if (!r) { toast('Data tidak ditemukan.'); return; }
-    const d = this.makeDoc(r.name); d.key = key; d.load(JSON.parse(r.data)); d._stored = true;
+    const d = this.makeDoc(r.name); d.key = key; d.load(JSON.parse(r.data)); d._stored = true; this.loadImgs(d, r.imgKeys);
     this.replaceBlankOrAdd(d); setTimeout(() => this.ed.zoomExtents(), 30);
   }
   replaceBlankOrAdd(d) {
@@ -381,6 +395,7 @@ class App {
           act('sheet', 'New — Gambar Kerja A3', 'Layout A3 + kop Indonesia siap plot', () => { const d = this.newDoc({ layout: 'A3' }); d.layouts[0].tb.title = 'JUDUL GAMBAR'; }),
           act('open', 'Open Files…', 'DXF (R12 – 2018/2027) atau .amcad · Ctrl+O', () => this.open()),
           act('door', 'Contoh Denah Rumah', 'Pelajari fitur dengan contoh', () => this.newDoc({ sample: true, name: 'Denah-Tipe-45' })),
+          act('map', 'Site Plan dari Google Maps', 'Cari lokasi → capture → skala riil + tracing otomatis', () => { const blank = !this.doc.model.length; if (!blank) this.newDoc({ name: 'Site-Plan' }); else this.showStartPage(false); openGeoMap(this, { mode: 'poly' }); }),
           this.docs.some(d => d.model.length) ? act('start', 'Kembali ke gambar', this.doc.name, () => this.showStartPage(false)) : null,
           act('help', 'Perintah & Shortcut', 'F1', () => D.help(this.ui)))),
       h('div', {}, h('h3', { class: 'sp-h' }, recent.length ? 'Recent Documents & Contoh' : 'Contoh'), cards,
@@ -402,11 +417,16 @@ class App {
     C('EXPORT', () => this.exportDialog(), { alias: ['EXP', 'DXFOUT', 'SAVEDXF'] });
     C('LIBRARY', async ed => { const n = await this.ui.insertDialog('lib'); if (n) { ed.insertName = n; setTimeout(() => this.exec('INSERT'), 0); } }, { alias: ['LIB', 'TOOLPALETTES', 'TP'] });
     C('LIBDOOR', async ed => { const n = await this.ui.insertDialog('Pintu & Jendela'); if (n) { ed.insertName = n; setTimeout(() => this.exec('INSERT'), 0); } });
+    C('GEOMAP', () => openGeoMap(this), { alias: ['PETA', 'MAPS', 'GMAPS', 'GOOGLEMAPS', 'GEO', 'GEOGRAPHICLOCATION', 'MAP'] });
+    C('GEOMAPIMAGE', () => openGeoMap(this, { mode: 'rect' }), { alias: ['CAPTUREMAP', 'MAPCAPTURE'] });
+    C('SITEPLAN', () => openGeoMap(this, { mode: 'poly' }), { alias: ['BATASLAHAN', 'SP'] });
+    C('GEOREMOVE', () => { if (!this.doc.geo) { this.ui.print('Gambar ini belum punya lokasi geografis.'); return; } this.mutate(() => { this.doc.geo = null; }); this.ui.print('Lokasi geografis dihapus.', 'ok'); }, { alias: ['GEOLOCATIONREMOVE'] });
     C('IMAGEPLACE', async ed => {
       const I = ed.imgPending; if (!I) return; ed.imgPending = null;
       const p = await ed.getPoint('Specify insertion point:'); if (!p) return;
       const w = await ed.getDist('Specify scale factor (width) <1000>:', { base: p, def: 1000, preview: q => [{ type: 'image', p, w: Math.max(1, Math.abs(q.x - p.x)), h: Math.max(1, Math.abs(q.x - p.x)) * I.ar, rot: 0 }] });
-      ed.add({ type: 'image', p, w, h: w * I.ar, rot: 0, src: I.src, name: I.name });
+      const key = 'img' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); ed.doc.imgs[key] = I.src;
+      ed.add({ type: 'image', p, w, h: w * I.ar, rot: 0, img: key, name: I.name });
     }, { noUndo: false });
     // toggle UI
     const flip = (k, n) => () => this.ui.flip(k, n);
