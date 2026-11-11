@@ -314,3 +314,38 @@ table.lt td.c .off { opacity: .35; }
 }
 .list .ico { width: 22px; height: 22px; }
 .list > div.on .hint { color: #dbe8ff; }
+
+/* ---------- Google Maps / Site Plan ---------- */
+.gm-win > .wb { padding: 10px; display: flex; flex-direction: column; overflow: hidden; }
+.gm { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.gm-top, .gm-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gm-search { position: relative; display: flex; align-items: center; gap: 6px; flex: 1 1 360px; min-width: 240px; background: var(--inp); border: 1px solid var(--line); border-radius: 6px; padding: 0 4px 0 8px; height: 32px; }
+.gm-search > span .ico { width: 16px; height: 16px; color: var(--tx3); }
+.gm-search input { flex: 1; border: 0; background: none; height: 30px; padding: 0; min-width: 0; font-size: 13px; }
+.gm-res { position: absolute; left: -1px; right: -1px; top: 34px; z-index: 5; background: var(--panel); border: 1px solid var(--line2); border-radius: 6px; box-shadow: var(--shadow); max-height: 320px; overflow: auto; }
+.gm-res > div { padding: 7px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid var(--line); }
+.gm-res > div:hover { background: var(--hov); }
+.gm-res small { color: var(--tx3); }
+.gm-seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 6px; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+.gm-seg button { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; color: var(--tx2); border-right: 1px solid var(--line); white-space: nowrap; }
+.gm-seg button:last-child { border-right: 0; }
+.gm-seg button .ico { width: 16px; height: 16px; }
+.gm-seg button:hover { background: var(--hov); color: var(--tx); }
+.gm-seg button.on { background: var(--acc); color: #fff; }
+.gm-tip { color: var(--tx3); font-size: 11.5px; flex: 1 1 260px; }
+.gm-body { flex: 1; display: flex; gap: 10px; min-height: 0; }
+.gm-mapwrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.gm-map { position: relative; flex: 1; min-height: 240px; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; background: #d8dadd; touch-action: none; }
+.gm-map canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; cursor: grab; }
+.gm-coord { font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--tx3); min-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gm-side { width: 320px; flex: none; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.gm-side fieldset { margin: 0; }
+.gm-info { line-height: 1.6; color: var(--tx2); }
+.gm-info b { color: var(--tx); }
+.gm-go { height: 36px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.gm-go .ico { width: 18px; height: 18px; }
+.gm-bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; display: none; }
+.gm-bar i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .2s; }
+.gm-log { font-size: 11.5px; line-height: 1.5; color: var(--tx2); max-height: 120px; overflow: auto; }
+.gm-log .ok { color: var(--ok); } .gm-log .err { color: var(--err); }
+@media (max-width: 860px) { .gm-body { flex-direction: column; } .gm-side { width: auto; max-height: 42vh; } .gm-tip { display: none; } .gm-map { min-height: 46vh; } }
