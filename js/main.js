@@ -12,7 +12,7 @@ import { $, h, win, toast, sel, num, chk } from './dom.js';
 import { icon } from './icons.js';
 import { buildSample } from './sample.js';
 import * as D from './dialogs.js';
-import { openGeoMap } from './geomap.js';
+import { openGeoMap, roofCmd } from './geomap.js';
 
 // ---------- penyimpanan (IndexedDB) ----------
 const idb = (() => {
@@ -420,6 +420,7 @@ class App {
     C('GEOMAP', () => openGeoMap(this), { alias: ['PETA', 'MAPS', 'GMAPS', 'GOOGLEMAPS', 'GEO', 'GEOGRAPHICLOCATION', 'MAP'] });
     C('GEOMAPIMAGE', () => openGeoMap(this, { mode: 'rect' }), { alias: ['CAPTUREMAP', 'MAPCAPTURE'] });
     C('SITEPLAN', () => openGeoMap(this, { mode: 'poly' }), { alias: ['BATASLAHAN', 'SP'] });
+    C('ATAP', ed => roofCmd(this, ed), { noUndo: false, alias: ['KLIKATAP', 'TRACEATAP', 'TRACEROOF', 'ROOF'] });
     C('GEOREMOVE', () => { if (!this.doc.geo) { this.ui.print('Gambar ini belum punya lokasi geografis.'); return; } this.mutate(() => { this.doc.geo = null; }); this.ui.print('Lokasi geografis dihapus.', 'ok'); }, { alias: ['GEOLOCATIONREMOVE'] });
     C('IMAGEPLACE', async ed => {
       const I = ed.imgPending; if (!I) return; ed.imgPending = null;

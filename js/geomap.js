@@ -6,6 +6,7 @@ import { icon } from './icons.js';
 import { ll2px, px2ll, gsd, makeENU, geoXform, utm, tm3, fmtLat, fmtLon, azimuth, fmtAz, parseLoc, gmapsUrl } from './geo.js';
 import { TRACE_STYLE } from './trace.js';
 import { fgbBBox } from './fgb.js';
+import { traceRoof } from './roof.js';
 import { LIBRARY } from './library.js';
 import { PREF_SCALES, UNIT_MM, fitVp } from './doc.js';
 
@@ -429,6 +430,58 @@ async function alignStep({ wk, msg, M, gB, gL, photo, obP, box, o, setProg, L })
   return { polys: rb.polys, lines: rb.lines, fromF };
 }
 
+// ================= ATAP: klik atap pada foto peta → garis bangunan =================
+// Untuk bangunan yang tidak ada di data mana pun: deteksi dari foto yang sudah diplot (jadi pasti pas dengan foto).
+export async function roofCmd(app, ed) {
+  const doc = app.doc, isOn = e => { const Ly = doc.layers[e.layer]; return !Ly || (Ly.on !== false && !Ly.frz); };
+  const imgs = doc.model.filter(e => e.type === 'image' && (e.img || e.src) && isOn(e));
+  if (!imgs.length) { ed.msg('Belum ada foto peta di gambar ini. Capture dulu lewat Google Maps (GEOMAP), lalu jalankan ATAP.', 'err'); return; }
+  ed.msg('Klik di tengah atap bangunan pada foto → garis atap dideteksi otomatis. Kecil / Besar = ubah cakupan atap terakhir. Enter = selesai.');
+  doc.addLayer('SITE-BANGUNAN', LAY['SITE-BANGUNAN']);
+  const decoded = new Map(), added = []; let last = null;
+  const local = (e, p) => { const c = Math.cos(e.rot || 0), s = Math.sin(e.rot || 0), dx = p.x - e.p.x, dy = p.y - e.p.y; return { x: c * dx + s * dy, y: -s * dx + c * dy }; };
+  const world = (e, lx, ly) => { const c = Math.cos(e.rot || 0), s = Math.sin(e.rot || 0); return { x: e.p.x + c * lx - s * ly, y: e.p.y + s * lx + c * ly }; };
+  const pixels = async e => { // foto → kanvas (sekali per perintah)
+    const src = e.img ? doc.imgs?.[e.img] : e.src; if (!src) return null;
+    if (!decoded.has(src)) { // onload, bukan img.decode(): decode() bisa menggantung bila halaman sedang tidak merender
+      const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error('foto rusak')); im.src = src; if (im.complete && im.naturalWidth) res(); });
+      const cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight; const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(im, 0, 0); decoded.set(src, { cx, W: cv.width, H: cv.height }); }
+    return decoded.get(src);
+  };
+  const pl = (L0, k) => ({ type: 'pline', pts: Array.from({ length: k.pts.length / 2 }, (_, i) => { const ix = k.pts[2 * i] + L0.x0, iy = k.pts[2 * i + 1] + L0.y0, q = world(L0.e, ix / L0.W * L0.e.w, (1 - iy / L0.H) * L0.e.h); return { x: q.x, y: q.y, b: 0 }; }), closed: true, layer: 'SITE-BANGUNAN', color: 256, lt: 'ByLayer', lw: -1 });
+  const info = (k, n) => ed.msg(`Bangunan ${n}: luas atap ${fmtM(k.area, 1)} m²${k.touch ? ' (mungkin terpotong tepi foto)' : ''}.`);
+  for (;;) {
+    const kws = last ? ['Kecil', 'Besar', 'Undo'] : added.length ? ['Undo'] : [];
+    const p = await ed.getPoint(`Klik atap bangunan pada foto${kws.length ? ` [${kws.join('/')}]` : ''} <selesai>:`, { kws, noSnap: true }); // tanpa OSNAP: titik klik apa adanya
+    if (p === null || p === undefined) break;
+    if (p === 'Undo') { const e = added.pop(); if (e) { ed.remove(e); ed.msg('Bangunan terakhir dihapus.'); } last = null; continue; }
+    if (p === 'Kecil' || p === 'Besar') {
+      const j = last.idx + (p === 'Kecil' ? 1 : -1), C = last.res.cands;
+      if (j < 0 || j >= C.length) { ed.msg(p === 'Kecil' ? 'Sudah cakupan terkecil.' : 'Sudah cakupan terbesar (lebih dari ini bocor ke sekitar).'); continue; }
+      ed.remove(last.ent); last.idx = j; last.ent = ed.add(pl(last.L0, C[j])); added[added.length - 1] = last.ent; info(C[j], added.length); continue;
+    }
+    if (typeof p !== 'object') continue;
+    const e = [...imgs].reverse().find(im => { const q = local(im, p); return q.x >= 0 && q.y >= 0 && q.x <= im.w && q.y <= im.h; });
+    if (!e) { ed.msg('Titik di luar foto peta — klik di atas foto.'); continue; }
+    let px; try { px = await pixels(e); } catch { px = null; }
+    if (!px) { ed.msg('Foto tidak bisa dibaca.', 'err'); continue; }
+    const q = local(e, p), ix = q.x / e.w * px.W, iy = (1 - q.y / e.h) * px.H;
+    const g = e.geo?.gsd || (e.w / px.W) * (UNIT_MM[doc.set.units || 'mm'] || 1) / 1000; // m per piksel foto
+    let res = null, L0 = null;
+    for (const half of [Math.round(30 / g), Math.round(70 / g)]) { // jendela ±30 m; bila atap menyentuh tepinya ±70 m
+      const x0 = Math.max(0, Math.floor(ix - half)), y0 = Math.max(0, Math.floor(iy - half)), x1 = Math.min(px.W, Math.ceil(ix + half)), y1 = Math.min(px.H, Math.ceil(iy + half));
+      const d = px.cx.getImageData(x0, y0, x1 - x0, y1 - y0);
+      res = traceRoof(d.data, x1 - x0, y1 - y0, ix - x0, iy - y0, g, { free: { l: x0 === 0, t: y0 === 0, r: x1 === px.W, b: y1 === px.H } }); L0 = { e, x0, y0, W: px.W, H: px.H };
+      const edge = x0 > 0 || y0 > 0 || x1 < px.W || y1 < px.H; // jendela belum sebesar foto
+      if (res.err || !res.cands[res.pick].touch || !edge) break;
+    }
+    if (res.err) { ed.msg(`Atap tidak terdeteksi: ${res.err}. Klik lebih ke tengah atap, atau gambar manual (REC / PL).`); continue; }
+    const k = res.cands[res.pick], ent = ed.add(pl(L0, k));
+    added.push(ent); last = { res, idx: res.pick, L0, ent }; info(k, added.length);
+  }
+  if (added.length) ed.msg(`${added.length} bangunan ditambahkan di layer SITE-BANGUNAN.`, 'ok');
+}
+
 // ================= Capture → gambar =================
 export async function capture(app, { shape, box, o, setProg = () => { }, L = () => { } }) {
   const doc = app.doc, units = doc.set.units || 'mm', k = 1000 / (UNIT_MM[units] || 1);
@@ -639,6 +692,7 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
   void addL; void rev;
   const summary = `Site plan diplot: area ${fmtM(b.e - a.e, 1)} × ${fmtM(b.n - a.n, 1)} m, skala anotasi 1:${N}` + (site ? `, luas lahan ${fmtM(site.area)} m², keliling ${fmtM(site.per)} m` : '') + (traced.bld + traced.road ? `, ${traced.bld + traced.bld2} bangunan & ${traced.road} tepi jalan ditrace` : '') + '.';
   app.ui.print(summary, 'ok');
+  if (o.bld && img) app.ui.print('Ada bangunan yang belum tergaris? Perintah ATAP (Insert › Klik Atap), lalu klik atapnya di foto.');
   if (newGeo) app.ui.print(`Lokasi gambar: ${fmtLat(geo.lat)} ${fmtLon(geo.lon)} di titik (${fmtM(geo.x, 1)}, ${fmtM(geo.y, 1)}) ${units}. Capture berikutnya otomatis menyambung.`);
   return { summary, bbox: bb };
 }

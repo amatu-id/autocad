@@ -110,6 +110,7 @@ const P = {
   color: `<circle cx="11" cy="12" r="6" fill="${R}"/><circle cx="21" cy="12" r="6" fill="${G}" opacity=".9"/><circle cx="16" cy="20" r="6" fill="${B}" opacity=".9"/>`,
   map: s('M4 8l7-3 10 3 7-3v19l-7 3-10-3-7 3z') + s('M11 5v19M21 8v19', 'currentColor', 1.3) + f('M21 6a5 5 0 0 0-5 5c0 4 5 9 5 9s5-5 5-9a5 5 0 0 0-5-5z', R) + `<circle cx="21" cy="11" r="1.8" fill="#fff"/>`,
   capture: s('M4 10V5h5M23 5h5v5M28 22v5h-5M9 27H4v-5', B, 2.2) + f('M16 8a5.5 5.5 0 0 0-5.5 5.5c0 4.4 5.5 10 5.5 10s5.5-5.6 5.5-10A5.5 5.5 0 0 0 16 8z', R) + `<circle cx="16" cy="13.5" r="2" fill="#fff"/>`,
+  roof: s('M4 16l12-9 12 9', R, 2.2) + s('M7.5 14v11h17V14', 'currentColor', 1.6) + f('M17 15.5l9.5 4.2-4.1 1.4-1.6 4.1z', B) + s('M22.4 21.1l3.4 3.6', B, 1.6),
   siteplan: s('M5 6h22v20H5z', 'currentColor', 1.6) + s('M9 22l3-11 11 3-2 9z', R, 1.8) + s('M14 15h4v4h-4z', B, 1.3) + s('M8 26h18', Y, 1.2),
   image: s('M4 6h24v20H4z') + s('M4 22l7-7 6 6 4-4 7 7', B) + dot(22, 11, Y, 2.4),
   find: `<circle cx="13" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2"/>` + s('M19 19l9 9') + t(13, 16.5, 'A', B, 10),
