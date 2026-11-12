@@ -165,15 +165,20 @@ export function dimGeom(e, ds0) {
     const ext = (p, o, q) => { const sg = Math.sign(o) || 1; if (Math.abs(o) > exo) out.push({ t: 'L', a: add(p, mul(n, sg * exo)), b: add(q, mul(n, sg * exe)) }); };
     ext(e.p1, o1, q1); ext(e.p2, o2, q2);
     const dd = unit(sub(q2, q1)), dle = ds.arrow === 'tick' ? (ds.dle || ds.exe) * k : 0;
-    const L = dist(q1, q2);
+    const L = dist(q1, q2), inside = L >= ds.asz * k * 2.2;
     if (L > 1e-9) {
       out.push({ t: 'L', a: sub(q1, mul(dd, dle)), b: add(q2, mul(dd, dle)) });
-      const inside = L >= ds.asz * k * 2.2;
       arrow(out, q1, inside ? dd : mul(dd, -1), ds); arrow(out, q2, inside ? mul(dd, -1) : dd, ds);
       if (!inside && ds.arrow !== 'tick') { const s = ds.asz * k * 2; out.push({ t: 'L', a: sub(q1, mul(dd, s)), b: q1 }, { t: 'L', a: q2, b: add(q2, mul(dd, s)) }); }
     }
-    const tr = readable(Math.atan2(dd.y, dd.x) || Math.atan2(d.y, d.x)), up = perp({ x: Math.cos(tr), y: Math.sin(tr) });
-    if (e.tp) T(e.tp, tr, 1); else T(add(mid(q1, q2), mul(up, gap)), tr, 1);
+    const tr = readable(Math.atan2(dd.y, dd.x) || Math.atan2(d.y, d.x)), r = { x: Math.cos(tr), y: Math.sin(tr) }, up = perp(r);
+    const tw = e.tp || !ds.tfit ? 0 : textW(txt, th);
+    if (e.tp) T(e.tp, tr, 1);
+    else if (ds.tfit && L > 1e-9 && tw + 2 * gap > L) { // tfit: teks tak muat di antara garis bantu → di perpanjangan garis ukuran, sisi kanan arah baca (ISO 129-1)
+      const qe = dot(r, dd) >= 0 ? q2 : q1, s0 = (inside ? 0 : ds.asz * k) + 2 * gap;
+      out.push({ t: 'L', a: qe, b: add(qe, mul(r, s0 + tw + gap)) });
+      T(add(add(qe, mul(r, s0 + tw / 2)), mul(up, gap)), tr, 1);
+    } else T(add(mid(q1, q2), mul(up, gap)), tr, 1);
   } else if (e.kind === 'rad' || e.kind === 'dia') {
     const a = ang(e.c, e.dl), p = polar(e.c, a, e.r), q = polar(e.c, a + Math.PI, e.r), dl = dist(e.c, e.dl);
     if (e.kind === 'dia') { out.push({ t: 'L', a: q, b: p }); arrow(out, q, sub(e.c, q), ds); }

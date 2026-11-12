@@ -35,6 +35,12 @@ const LAY = {
   'SITE-JALAN': { color: 8, lw: 25 }, 'SITE-AIR': { color: 5, lw: 25 }, 'SITE-HIJAU': { color: 3, lw: 18 },
   'SITE-DIMENSI': { color: 3, lw: 18 }, 'SITE-TEKS': { color: 7, lw: 25 }, 'SITE-KOORDINAT': { color: 6, lw: 18 }, 'SITE-SIMBOL': { color: 7, lw: 25 },
 };
+// garis dari alat Ukur: merah tebal; dimensinya merah tipis (garis ukuran = garis tipis, ISO 128)
+const MLAY = { 'SITE-UKUR': { color: 1, lw: 50 }, 'SITE-UKUR-DIM': { color: 1, lw: 18 } };
+// gaya dimensi ISO-25 (ISO 129-1): teks 2,5 mm sejajar & di atas garis ukuran (terbaca dari bawah / kanan), panah tertutup terisi 2,5 mm,
+// garis bantu mulai 0,625 mm dari titik ukur & lewat 1,25 mm dari garis ukuran, desimal koma; teks yang tidak muat pindah ke perpanjangan garis ukuran
+const ISO25 = { txt: 2.5, asz: 2.5, exo: 0.625, exe: 1.25, gap: 0.625, arrow: 'closed', sep: ',', dle: 0, tfit: 1 };
+const MCOL = '#ff3b30'; // warna garis ukur di peta = warna hasil plot
 
 function loadImg(url, tries = 2) {
   return new Promise(res => {
@@ -133,9 +139,9 @@ class GeoView {
     if (S && S.pts.length) {
       const P = S.pts.map(p => this.ll2s(p.lat, p.lon)), closed = S.kind === 'rect' || S.closed;
       c.beginPath(); P.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y));
-      if (!closed && this.mouse && S.kind !== 'rect' && !S.closed) c.lineTo(this.mouse.x, this.mouse.y);
-      if (closed) { c.closePath(); c.fillStyle = S.kind === 'measure' ? 'rgba(255,181,71,.16)' : 'rgba(47,140,255,.16)'; c.fill(); }
-      c.strokeStyle = S.kind === 'measure' ? '#ffb547' : '#2f8cff'; c.lineWidth = 2.2; c.stroke();
+      if (!closed && this.mouse && S.kind !== 'rect' && !S.done && this.mode === S.kind) c.lineTo(this.mouse.x, this.mouse.y);
+      if (closed) { c.closePath(); c.fillStyle = S.kind === 'measure' ? 'rgba(255,59,48,.13)' : 'rgba(47,140,255,.16)'; c.fill(); }
+      c.strokeStyle = S.kind === 'measure' ? MCOL : '#2f8cff'; c.lineWidth = 2.2; c.stroke();
       const M = shapeMetrics(S.pts, closed);
       c.font = '600 11px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
       M.edges.forEach((L, i) => {
@@ -143,7 +149,7 @@ class GeoView {
         const t = fmtM(L) + ' m', w = c.measureText(t).width + 10, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         c.fillStyle = 'rgba(20,26,34,.82)'; c.beginPath(); c.roundRect?.(mx - w / 2, my - 9, w, 18, 9); c.fill(); c.fillStyle = '#fff'; c.fillText(t, mx, my + 0.5);
       });
-      P.forEach((p, i) => { c.fillStyle = '#fff'; c.strokeStyle = S.kind === 'measure' ? '#ffb547' : '#2f8cff'; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, i === this.hotV ? 6.5 : 4.5, 0, 7); c.fill(); c.stroke(); });
+      P.forEach((p, i) => { c.fillStyle = '#fff'; c.strokeStyle = S.kind === 'measure' ? MCOL : '#2f8cff'; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, i === this.hotV ? 6.5 : 4.5, 0, 7); c.fill(); c.stroke(); });
     }
     // skala grafis
     const ll = this.center(), mpp = gsd(ll.lat, this.zoom);
@@ -187,7 +193,7 @@ class GeoView {
       if (D.rect) { const M = shapeMetrics(this.shape.pts, true); if (M.area < 1) this.shape = null; this.onChange?.(); this.draw(); return; }
       if (!D.moved && D.btn === 0 && D.vi < 0 && (this.mode === 'poly' || this.mode === 'measure')) {
         const ll = this.s2ll(p.x, p.y);
-        if (!this.shape || this.shape.kind !== this.mode || this.shape.closed) this.shape = { kind: this.mode, pts: [] };
+        if (!this.shape || this.shape.kind !== this.mode || this.shape.closed || this.shape.done) this.shape = { kind: this.mode, pts: [] }; // ukur yang sudah selesai → ukur baru
         const S = this.shape;
         if (S.pts.length >= 3) { const f = this.ll2s(S.pts[0].lat, S.pts[0].lon); if (Math.hypot(f.x - p.x, f.y - p.y) < 10) { S.closed = true; this.onChange?.(); this.draw(); return; } }
         S.pts.push(ll); this.onChange?.(); this.draw();
@@ -198,7 +204,11 @@ class GeoView {
     cv.addEventListener('dblclick', e => {
       e.preventDefault(); const p = pos(e);
       if ((this.mode === 'poly' || this.mode === 'measure') && this.shape && !this.shape.closed) {
-        const S = this.shape; if (S.pts.length > 1) S.pts.pop(); // klik ganda menambah satu titik lebih
+        const S = this.shape, n = S.pts.length;
+        if (n > 1) { // buang titik ganda dari klik kedua saja; biasanya klik kedua mengenai titik barunya (geser titik), jadi tidak ada titik ganda
+          const a = this.ll2s(S.pts[n - 1].lat, S.pts[n - 1].lon), b = this.ll2s(S.pts[n - 2].lat, S.pts[n - 2].lon);
+          if (Math.hypot(a.x - b.x, a.y - b.y) < 4) S.pts.pop();
+        }
         if (this.mode === 'poly' && S.pts.length >= 3) S.closed = true; else if (this.mode === 'measure') S.done = true;
         this.onChange?.(); this.draw(); return;
       }
@@ -209,7 +219,8 @@ class GeoView {
       const S = this.shape;
       if (e.key === 'Escape' && S && !S.closed && S.kind !== 'rect' && S.pts.length) { e.stopPropagation(); this.shape = null; this.onChange?.(); this.draw(); return; }
       if (e.key === 'Enter' && S && !S.closed && S.pts.length >= 3 && S.kind === 'poly') { S.closed = true; this.onChange?.(); this.draw(); }
-      if (e.key === 'Backspace' && S && !S.closed && S.pts.length) { S.pts.pop(); this.onChange?.(); this.draw(); }
+      if (e.key === 'Enter' && S && !S.closed && S.pts.length >= 2 && S.kind === 'measure') { S.done = true; this.onChange?.(); this.draw(); }
+      if (e.key === 'Backspace' && S && !S.closed && S.pts.length) { S.pts.pop(); S.done = false; this.onChange?.(); this.draw(); }
       const k = 2 ** this.zoom, st = 80 / k;
       if (e.key === '+' || e.key === '=') this.zoomAt(this.W / 2, this.H / 2, this.zoom + 1);
       if (e.key === '-') this.zoomAt(this.W / 2, this.H / 2, this.zoom - 1);
@@ -222,7 +233,7 @@ class GeoView {
 export function openGeoMap(app, opt = {}) {
   const ed = app.ed, doc = app.doc;
   const saved = LS.get('amatucad-geomap', { lat: -6.1754, lon: 106.8272, zoom: 16, src: 'sat' });
-  const o = Object.assign({ photo: 'sat', bld: true, obData: true, snap: true, road: true, water: true, green: true, boundary: true, dims: true, table: true, notes: true, coord: 'utm', detail: 'std', dec: 2 }, LS.get('amatucad-geomap-opt', {}));
+  const o = Object.assign({ photo: 'sat', bld: true, obData: true, snap: true, road: true, water: true, green: true, boundary: true, meas: true, dims: true, table: true, notes: true, coord: 'utm', detail: 'std', dec: 2 }, LS.get('amatucad-geomap-opt', {}));
   const geo = doc.geo;
   const mapBox = h('div', { class: 'gm-map' });
   const info = h('div', { class: 'gm-info hint' });
@@ -259,7 +270,7 @@ export function openGeoMap(app, opt = {}) {
   const toolSeg = segBtns([['pan', 'Geser', 'pan'], ['rect', 'Area persegi', 'rect'], ['poly', 'Batas lahan', 'area'], ['measure', 'Ukur', 'dist']], opt.mode || 'pan', k => setMode(k));
   const setMode = k => { view.mode = k; view.cv.style.cursor = k === 'pan' ? 'grab' : 'crosshair'; toolSeg.draw(k); hintTool(); };
   const toolHint = h('div', { class: 'gm-tip' });
-  const hintTool = () => { toolHint.textContent = { pan: 'Seret untuk menggeser, scroll / pinch untuk zoom. Capture tanpa seleksi = area yang terlihat.', rect: 'Seret untuk membuat area capture. Titik sudut bisa digeser.', poly: 'Klik titik-titik batas lahan; klik titik pertama / klik ganda / Enter untuk menutup (Capture juga menutup otomatis). Backspace = hapus titik terakhir. Titik bisa digeser.', measure: 'Klik titik-titik untuk mengukur jarak; klik ganda untuk selesai.' }[view.mode]; };
+  const hintTool = () => { toolHint.textContent = { pan: 'Seret untuk menggeser, scroll / pinch untuk zoom. Capture tanpa seleksi = area yang terlihat.', rect: 'Seret untuk membuat area capture. Titik sudut bisa digeser.', poly: 'Klik titik-titik batas lahan; klik titik pertama / klik ganda / Enter untuk menutup (Capture juga menutup otomatis). Backspace = hapus titik terakhir. Titik bisa digeser.', measure: 'Klik titik-titik untuk mengukur; klik ganda / Enter = selesai, klik titik pertama = area tertutup. Capture memplot garis ukur merah + dimensi ISO.' }[view.mode]; };
   const persist = () => { const c = view.center(); LS.set('amatucad-geomap', { lat: c.lat, lon: c.lon, zoom: view.zoom, src: view.src }); };
   // --- opsi ---
   const O = (k, l) => chk(l, o[k], v => { o[k] = v; LS.set('amatucad-geomap-opt', o); updInfo(); });
@@ -268,10 +279,13 @@ export function openGeoMap(app, opt = {}) {
   const coordSel = sel([['utm', 'UTM (WGS84)'], ['tm3', 'TM-3° (BPN)'], ['ll', 'Geografis (lintang/bujur)']], o.coord, v => { o.coord = v; LS.set('amatucad-geomap-opt', o); });
   const decSel = sel([['2', 'meter, 2 desimal (cm)'], ['3', 'meter, 3 desimal (mm)']], String(o.dec), v => { o.dec = +v; LS.set('amatucad-geomap-opt', o); });
   let busy = false;
-  const btnCap = h('button', { class: 'btn pri gm-go', onclick: () => doCapture() }, h('span', { html: icon('capture') }), ' Capture & plot ke gambar');
-  // tanpa seleksi, sorot seluruh peta saat tombol disentuh: itulah area yang akan di-capture
-  btnCap.addEventListener('pointerenter', () => { if (!view || busy) return; const S = capShape(); if (S.auto) { view.hl = S; view.draw(); } });
+  const capLbl = h('span', {}, ' Capture & plot ke gambar');
+  const btnCap = h('button', { class: 'btn pri gm-go', onclick: () => doCapture() }, h('span', { html: icon('capture') }), capLbl);
+  // saat tombol disentuh, sorot area yang akan di-capture (tanpa seleksi = seluruh peta; batas lahan / garis ukur = kotak + margin)
+  btnCap.addEventListener('pointerenter', () => { if (!view || busy) return; const S = capShape(); view.hl = S.auto ? S : boxShape(capBox(S)); view.draw(); });
   btnCap.addEventListener('pointerleave', () => { if (view && !busy && view.hl) { view.hl = null; view.draw(); } });
+  // garis ukur saja (tanpa unduh foto / tracing): untuk gambar yang fotonya sudah diplot, koordinat menyambung lewat lokasi gambar
+  const btnMeas = h('button', { class: 'btn gm-meas', style: { display: 'none' }, title: 'Hanya garis ukur merah + dimensi ISO (dan luas bila tertutup) yang diplot, tanpa foto & tracing baru. Posisinya pas dengan foto yang sudah ada karena memakai lokasi geografis gambar.', onclick: () => doCapture({ only: true }) }, h('span', { html: icon('dist') }), ' Plot garis ukur saja (tanpa foto baru)');
   const geoNote = h('div', { class: 'note', style: { display: geo ? '' : 'none' } }, 'Gambar ini sudah punya lokasi geografis — capture baru otomatis menyambung (koordinat sama).', h('br'), h('button', { class: 'btn sm', style: { marginTop: '6px' }, onclick: () => { if (confirm('Hapus lokasi geografis gambar ini? Capture berikutnya akan memakai titik acuan baru.')) { app.mutate(() => { doc.geo = null; }); geoNote.style.display = 'none'; view.marks = []; view.draw(); } } }, 'Reset lokasi'));
   const side = h('div', { class: 'gm-side' },
     h('fieldset', {}, h('legend', {}, 'Area terpilih'), info),
@@ -281,9 +295,11 @@ export function openGeoMap(app, opt = {}) {
       Object.assign(O('obData', '+ Data bangunan terbuka (lebih lengkap)'), { title: 'Jejak bangunan Google Open Buildings + Microsoft + OSM (gabungan VIDA, source.coop): rumah yang tidak ada di peta Google ikut tergambar. Hanya bagian area ini yang diunduh (beberapa ratus KB).' }),
       Object.assign(O('snap', 'Selaraskan garis ke foto satelit'), { title: 'Garis bangunan, jalan & air digeser / diputar sedikit agar pas dengan tepi atap & jalan di foto satelit yang diplot (data peta umumnya bergeser 1–4 m dari foto).' }),
       O('road', 'Tracing tepi jalan'), O('water', 'Tracing sungai / air'), O('green', 'Tracing taman / area hijau'),
-      O('boundary', 'Batas lahan (poligon) + ukuran riil & luas'), O('table', 'Tabel koordinat titik batas'), O('notes', 'Arah utara, skala grafis & keterangan'))),
+      O('boundary', 'Batas lahan (poligon) + ukuran riil & luas'),
+      Object.assign(O('meas', 'Garis ukur (merah) + dimensi ISO'), { title: 'Garis dari alat Ukur diplot merah (layer SITE-UKUR); tiap segmen diberi dimensi aligned gaya ISO 129-1 / ISO-25 (layer SITE-UKUR-DIM): panah tertutup 2,5 mm, teks 2,5 mm sejajar di atas garis ukuran, garis bantu 0,625 / 1,25 mm, desimal koma. Garis ukur tertutup ikut diberi luas & keliling.' }),
+      O('table', 'Tabel koordinat titik batas'), O('notes', 'Arah utara, skala grafis & keterangan'))),
     h('fieldset', {}, h('legend', {}, 'Ukuran & koordinat'), h('div', { class: 'grid2' }, 'Format ukuran:', decSel, 'Tabel koordinat:', coordSel)),
-    geoNote, btnCap, h('div', {}, status, bar), log,
+    geoNote, btnCap, btnMeas, h('div', {}, status, bar), log,
     h('div', { class: 'hint' }, 'Skala dihitung eksak dari elipsoid WGS84 (bukan skala tampilan), galat matematis < 1 mm. Akurasi posisi mengikuti data Google (umumnya 0,5–3 m); untuk legal/sertifikat tetap perlu ukur lapangan.'));
   const top = h('div', { class: 'gm-top' },
     h('div', { class: 'gm-search' }, h('span', { html: icon('find') }), q, h('button', { class: 'btn sm', onclick: go }, 'Cari'), res),
@@ -304,28 +320,34 @@ export function openGeoMap(app, opt = {}) {
   }
   setMode(opt.mode || 'pan');
   // yang di-capture: seleksi yang ada; batas lahan ≥ 3 titik yang belum ditutup (ditutup otomatis saat Capture);
-  // tanpa seleksi (atau baru 1–2 titik / garis ukur) = area yang sedang terlihat di peta, jadi tombol Capture selalu jalan
+  // garis ukur ≥ 2 titik (kotak garis + margin, agar foto pasti menutupi garisnya);
+  // tanpa seleksi (atau baru 1–2 titik) = area yang sedang terlihat di peta, jadi tombol Capture selalu jalan
   function capShape() {
     const S = view.shape;
-    if (S && (S.kind === 'rect' || (S.pts.length >= 3 && (S.closed || S.kind === 'poly')))) return S;
+    if (S && (S.kind === 'rect' || (S.pts.length >= 3 && (S.closed || S.kind === 'poly')) || (S.kind === 'measure' && S.pts.length >= 2))) return S;
     return view.viewShape();
   }
+  function measShape() { const S = view?.shape; return S && S.kind === 'measure' && S.pts.length >= 2 ? S : null; }
   function updInfo() {
     if (!view) return;
-    const S0 = view.shape, S = capShape(); info.innerHTML = '';
-    btnCap.disabled = busy;
-    if (S0?.kind === 'measure' && S0.pts.length) { const M = shapeMetrics(S0.pts, !!S0.closed); info.append(h('div', {}, `Ukur: jarak total ${fmtM(M.per, 3)} m`), S0.closed ? h('div', {}, `Luas: ${fmtM(M.area)} m²`) : ''); }
+    const S0 = view.shape, S = capShape(), MS = measShape(), withM = !!MS && o.meas !== false; info.innerHTML = '';
+    btnCap.disabled = busy; btnMeas.disabled = busy; btnMeas.style.display = MS ? '' : 'none';
+    capLbl.textContent = withM ? ' Capture & plot peta + garis ukur' : ' Capture & plot ke gambar';
+    if (S0?.kind === 'measure' && S0.pts.length) {
+      const M = shapeMetrics(S0.pts, !!S0.closed);
+      info.append(h('div', {}, h('b', {}, `Garis ukur · ${M.edges.length} segmen${S0.closed ? ' (tertutup)' : ''}`)), h('div', {}, `Panjang total: ${fmtM(M.per, 3)} m`), S0.closed ? h('div', {}, `Luas: ${fmtM(M.area)} m²`) : '');
+    }
     if (S.auto) {
       info.append(h('div', {}, h('b', {}, 'Otomatis: area yang terlihat di peta')));
       if (S0?.kind === 'poly' && S0.pts.length) info.append(h('div', { class: 'hint' }, `Batas lahan baru ${S0.pts.length} titik (minimal 3), jadi belum dipakai.`));
-    } else {
+    } else if (S.kind !== 'measure') {
       const M = shapeMetrics(S.pts, true);
-      info.append(h('div', {}, h('b', {}, S.kind === 'rect' ? 'Area persegi' : S.kind === 'measure' ? 'Area ukur' : `Batas lahan · ${S.pts.length} titik${S.closed ? '' : ' (ditutup otomatis saat Capture)'}`)),
+      info.append(h('div', {}, h('b', {}, S.kind === 'rect' ? 'Area persegi' : `Batas lahan · ${S.pts.length} titik${S.closed ? '' : ' (ditutup otomatis saat Capture)'}`)),
         h('div', {}, `Luas: ${fmtM(M.area)} m²  ·  Keliling: ${fmtM(M.per)} m`));
     }
     const bb = capBox(S), E = makeENU(bb.c.lat, bb.c.lon), sw = E.fwd(bb.s, bb.w), ne = E.fwd(bb.n, bb.e);
     const Wm = ne.e - sw.e, Hm = ne.n - sw.n;
-    info.append(h('div', {}, `Area capture: ${fmtM(Wm, 1)} × ${fmtM(Hm, 1)} m`));
+    info.append(h('div', {}, `Area capture: ${fmtM(Wm, 1)} × ${fmtM(Hm, 1)} m${S.kind === 'measure' ? ' (garis ukur + margin)' : ''}`));
     const z = pickZoom(bb, o.photo === 'none' ? 21 : SRC[o.photo].max, o.photo === 'none' ? 1 : SRC[o.photo].ts, maxPx(o));
     if (o.photo !== 'none') info.append(h('div', {}, `Foto: zoom ${z} · ${fmtM(gsd(bb.c.lat, z) * 100, 1)} cm/piksel`));
     const zt = pickZoom(bb, o.detail === 'high' ? 21 : 20, 2, maxPx(o));
@@ -334,6 +356,7 @@ export function openGeoMap(app, opt = {}) {
     if (tooBig) info.append(h('div', { style: { color: 'var(--warn)' } }, `Terlalu luas untuk Capture (maks. ${MAXCAP / 1000} km). Perbesar peta (zoom in) dulu.`));
     else if (Wm > 3000 || Hm > 3000) info.append(h('div', { style: { color: 'var(--warn)' } }, 'Area sangat luas — detail dikurangi otomatis agar memori cukup.'));
     if (S.auto && !tooBig) info.append(h('div', { class: 'hint' }, 'Tekan Capture untuk langsung memplot area ini. Untuk area tertentu pakai Area persegi; untuk ukuran, luas & tabel koordinat lahan pakai Batas lahan.'));
+    if (MS) info.append(h('div', { class: 'hint' }, withM ? 'Capture memplot foto peta + garis ukur merah + dimensi ISO tiap segmen. Foto sudah ada di gambar? Pakai “Plot garis ukur saja”.' : 'Opsi “Garis ukur (merah) + dimensi ISO” mati: Capture hanya memplot peta.'));
   }
   function capBox(S) {
     let n = -90, s = 90, e = -180, ww = 180; for (const p of S.pts) { n = Math.max(n, p.lat); s = Math.min(s, p.lat); e = Math.max(e, p.lon); ww = Math.min(ww, p.lon); }
@@ -343,33 +366,86 @@ export function openGeoMap(app, opt = {}) {
     }
     return { n, s, e, w: ww, c: { lat: (n + s) / 2, lon: (e + ww) / 2 } };
   }
-  async function doCapture() {
+  // only: hanya garis ukur + dimensi (tanpa foto / tracing / anotasi baru)
+  async function doCapture({ only = false } = {}) {
     if (busy || !view) return;
-    const S = capShape(), closing = S.kind === 'poly' && !S.closed;
+    const MS = measShape(); if (only && !MS) return;
+    const S = only ? MS : capShape(), closing = S.kind === 'poly' && !S.closed;
     const L = (t, cls) => { log.append(h('div', { class: cls || '' }, t)); log.scrollTop = 1e9; };
     const box = capBox(S), E = makeENU(box.c.lat, box.c.lon), a = E.fwd(box.s, box.w), b = E.fwd(box.n, box.e), Wm = b.e - a.e, Hm = b.n - a.n;
     log.innerHTML = '';
-    if (!(Wm > 0.5 && Hm > 0.5 && Math.max(Wm, Hm) <= MAXCAP)) { // peta di-zoom-out terlalu jauh: tile & memori tidak cukup
+    if (!only && !(Wm > 0.5 && Hm > 0.5 && Math.max(Wm, Hm) <= MAXCAP)) { // peta di-zoom-out terlalu jauh: tile & memori tidak cukup
       const t = `Area terlalu luas untuk di-capture (${fmtM(Wm / 1000, 1)} × ${fmtM(Hm / 1000, 1)} km). Perbesar peta (zoom in) atau buat Area persegi yang lebih kecil, lalu Capture lagi.`;
       setProg('', null); L(t, 'err'); toast(t, 6000); return;
     }
     if (closing) S.closed = true;
-    busy = true; btnCap.disabled = true;
-    view.hl = S.auto ? S : null; view.draw();
+    busy = true; btnCap.disabled = true; btnMeas.disabled = true;
+    view.hl = S.auto ? S : boxShape(box); view.draw();
     if (S.auto) L(`Tanpa seleksi → area yang terlihat di peta di-capture (${fmtM(Wm, 1)} × ${fmtM(Hm, 1)} m).`);
     if (closing) L(`Batas lahan ditutup otomatis (${S.pts.length} titik).`);
+    const meas = MS && (only || o.meas !== false) ? MS : null;
+    const oo = only ? { ...o, photo: 'none', bld: false, obData: false, road: false, water: false, green: false, boundary: false, table: false, notes: false } : o;
     try {
-      const r = await capture(app, { shape: S, box, o, setProg, L });
+      const r = await capture(app, { shape: S, box, o: oo, meas, only, setProg, L });
       setProg('Selesai ✓', null);
       L(r.summary, 'ok');
-      toast('Peta diplot ke gambar dengan skala riil ✓');
-      w.close(); app.ui.refresh(); ed.zoomExtents();
+      toast(only ? 'Garis ukur + dimensi ISO diplot ke gambar ✓' : meas ? 'Peta + garis ukur merah diplot ke gambar dengan skala riil ✓' : 'Peta diplot ke gambar dengan skala riil ✓');
+      w.close(); app.ui.refresh();
+      if (only && r.mbox && !ed.layout) ed.zoomRect(r.mbox, 1.25); else ed.zoomExtents();
     } catch (e) { console.error(e); setProg('Gagal: ' + (e.message || e), null); L(String(e.message || e), 'err'); }
     finally { busy = false; if (!w.closed) { view.hl = null; view.draw(); updInfo(); } }
   }
   updInfo(); hintTool();
   setTimeout(() => (opt.mode && opt.mode !== 'pan' ? view.cv : q).focus(), 60);
   return w;
+}
+const boxShape = bb => ({ kind: 'rect', pts: [{ lat: bb.n, lon: bb.w }, { lat: bb.n, lon: bb.e }, { lat: bb.s, lon: bb.e }, { lat: bb.s, lon: bb.w }] });
+
+// ================= Garis ukur → polyline merah + dimensi ISO =================
+// titik di dalam poligon yang paling jauh dari tepinya (label luas tetap di dalam walau bentuknya cekung / huruf L, U…)
+function labelPt(P) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity; for (const p of P) { x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y); }
+  const inside = (x, y) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
+  const clr = (x, y) => { let d = Infinity; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], dx = b.x - a.x, dy = b.y - a.y, t = clamp(((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1e-12), 0, 1); d = Math.min(d, Math.hypot(x - a.x - t * dx, y - a.y - t * dy)); } return inside(x, y) ? d : -d; };
+  let st = Math.max(x2 - x1, y2 - y1) / 40, best = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 }, bd = clr(best.x, best.y);
+  for (let y = y1 + st / 2; y < y2; y += st) for (let x = x1 + st / 2; x < x2; x += st) { const d = clr(x, y); if (d > bd) { bd = d; best = { x, y }; } }
+  for (let it = 0; it < 5; it++) { st /= 3; const b0 = best; for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) { const x = b0.x + i * st, y = b0.y + j * st, d = clr(x, y); if (d > bd) { bd = d; best = { x, y }; } } }
+  return best;
+}
+// meas: {pts:[{lat,lon}], closed}; X: geoXform gambar; ps: unit gambar per mm kertas (skala anotasi)
+export function measureEnts(meas, X, ps, o, units) {
+  const out = [], E = e => { out.push({ color: 256, lt: 'ByLayer', lw: -1, ...e }); return e; }, dec = o.dec || 2;
+  let P = [], LL = [];
+  for (const q of meas.pts) { const p = X.toDwg(q.lat, q.lon), l = P[P.length - 1]; if (!l || Math.hypot(p.x - l.x, p.y - l.y) > 1e-6) { P.push(p); LL.push(q); } } // titik ganda (klik ganda) dibuang
+  if (P.length > 2 && Math.hypot(P[0].x - P[P.length - 1].x, P[0].y - P[P.length - 1].y) < 1e-6) { P.pop(); LL.pop(); }
+  const closed = !!meas.closed && P.length >= 3;
+  if (P.length < 2) return { ents: out, n: 0 };
+  const Mx = shapeMetrics(LL, closed); // jarak & luas riil (bidang ENU), sama dengan panel peta
+  E({ type: 'pline', pts: P.map(q => ({ x: q.x, y: q.y, b: 0 })), closed, layer: 'SITE-UKUR' });
+  // sisi dimensi: luar poligon (garis terbuka: sisi cembung lintasannya; garis lurus: atas / kiri)
+  let ar = 0, d2 = 0; for (let i = 0; i < P.length; i++) { const u = P[i], v = P[(i + 1) % P.length]; ar += u.x * v.y - v.x * u.y; d2 = Math.max(d2, (u.x - P[0].x) ** 2 + (u.y - P[0].y) ** 2); }
+  const sg = Math.abs(ar) < 1e-9 * d2 ? 0 : Math.sign(ar), off = 7 * ps;
+  const ds = { ...ISO25, scale: ps, lfac: (UNIT_MM[units] || 1) / 1000, dec, suffix: ' m' };
+  const m = closed ? P.length : P.length - 1;
+  let lg = null; // segmen terpanjang (untuk label panjang total garis terbuka)
+  for (let i = 0; i < m; i++) {
+    const p1 = P[i], p2 = P[(i + 1) % P.length], dx = p2.x - p1.x, dy = p2.y - p1.y, l = Math.hypot(dx, dy); if (l < 1e-6) continue;
+    let nx = dy / l, ny = -dx / l; // kanan arah lintasan = luar untuk poligon CCW
+    if (sg < 0 || (sg === 0 && (ny < -1e-9 || (Math.abs(ny) <= 1e-9 && nx > 0)))) { nx = -nx; ny = -ny; }
+    E({ type: 'dim', kind: 'ali', p1: { ...p1 }, p2: { ...p2 }, dl: { x: p1.x + nx * off, y: p1.y + ny * off }, ds, layer: 'SITE-UKUR-DIM' });
+    if (!lg || l > lg.l) lg = { p1, p2, l, nx, ny };
+  }
+  if (closed) { // luas & keliling di dalam area
+    const c = labelPt(P);
+    E({ type: 'text', p: { x: c.x, y: c.y + 2.2 * ps }, s: `LUAS = ${fmtM(Mx.area)} m²`, h: 3 * ps, ha: 1, va: 2, rot: 0, layer: 'SITE-UKUR', lw: 35 });
+    E({ type: 'text', p: { x: c.x, y: c.y - 2.6 * ps }, s: `KELILING = ${fmtM(Mx.per, dec)} m`, h: 2.2 * ps, ha: 1, va: 2, rot: 0, layer: 'SITE-UKUR' });
+  } else if (m > 1 && lg) { // panjang total: sejajar segmen terpanjang, di sisi dalam (berlawanan dengan dimensinya), jadi tetap di dalam jangkauan garis
+    let rot = Math.atan2(lg.p2.y - lg.p1.y, lg.p2.x - lg.p1.x); if (rot > Math.PI / 2 + 1e-6 || rot <= -Math.PI / 2 + 1e-6) rot += rot > 0 ? -Math.PI : Math.PI; // terbaca dari bawah / kanan
+    const upx = -Math.sin(rot), upy = Math.cos(rot), inward = upx * -lg.nx + upy * -lg.ny > 0; // arah "atas" teks menjauhi garis?
+    const g = 1.5 * ps, c = { x: (lg.p1.x + lg.p2.x) / 2 - lg.nx * g, y: (lg.p1.y + lg.p2.y) / 2 - lg.ny * g };
+    E({ type: 'text', p: c, s: `PANJANG TOTAL = ${fmtM(Mx.per, dec)} m`, h: 2.5 * ps, ha: 1, va: inward ? 1 : 3, rot, layer: 'SITE-UKUR' });
+  }
+  return { ents: out, n: m, per: Mx.per, area: closed ? Mx.area : null, closed };
 }
 const maxPx = o => o.detail === 'high' ? (navigator.maxTouchPoints > 0 ? 4096 : 6144) : 4096;
 const MAXCAP = 25000; // sisi area capture terpanjang (m); lebih luas → tile zoom ≤ 12 & kanvas terlalu besar
@@ -483,7 +559,8 @@ export async function roofCmd(app, ed) {
 }
 
 // ================= Capture → gambar =================
-export async function capture(app, { shape, box, o, setProg = () => { }, L = () => { } }) {
+// meas: garis ukur yang ikut diplot (merah + dimensi ISO); only: hanya garis ukur (tanpa foto, tracing, anotasi & ubah layout)
+export async function capture(app, { shape, box, o, meas = null, only = false, setProg = () => { }, L = () => { } }) {
   const doc = app.doc, units = doc.set.units || 'mm', k = 1000 / (UNIT_MM[units] || 1);
   // 1) geolokasi gambar (titik singgung ENU = pusat area pertama; pojok kiri-bawah area = 0,0 bila gambar kosong)
   let geo = doc.geo && Math.abs((doc.geo.k || k) - k) < 1e-9 ? doc.geo : null, newGeo = null;
@@ -496,7 +573,7 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
   const X = geoXform(geo);
   const ents = [], addL = [];
   let img = null, photoInfo = '', place = '';
-  const revJ = fetch(`https://photon.komoot.io/reverse?lat=${box.c.lat}&lon=${box.c.lon}&limit=1`).then(r => r.json()).catch(() => null);
+  const revJ = only ? Promise.resolve(null) : fetch(`https://photon.komoot.io/reverse?lat=${box.c.lat}&lon=${box.c.lon}&limit=1`).then(r => r.json()).catch(() => null);
   const rev = revJ.then(j => { const P = j?.features?.[0]?.properties; if (P) place = [P.name, P.street, P.district || P.locality, P.city || P.county, P.state].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).join(', '); });
   // jejak bangunan terbuka diunduh paralel dengan foto & tile trace (hanya beberapa ratus KB lewat HTTP Range)
   const obAbort = new AbortController(), obTimer = setTimeout(() => obAbort.abort(), 45000);
@@ -598,7 +675,12 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
   setProg('Membuat batas lahan, ukuran & anotasi…', 0.94);
   const E = makeENU(box.c.lat, box.c.lon), a = E.fwd(box.s, box.w), b = E.fwd(box.n, box.e);
   const extra = (o.boundary && o.table && shape.kind === 'poly') || (o.notes && (newGeo || shape.kind === 'poly')) ? 150 : 0; // kolom tabel/keterangan di kanan (mm kertas)
-  const N = PREF_SCALES.find(n => (b.e - a.e) * 1000 / n + extra <= 296 && (b.n - a.n) * 1000 / n <= 235) || 10000, ps = N / (UNIT_MM[units] || 1);
+  let N = PREF_SCALES.find(n => (b.e - a.e) * 1000 / n + extra <= 296 && (b.n - a.n) * 1000 / n <= 235) || 10000;
+  if (only && !newGeo) { // garis ukur di atas foto yang sudah ada: ikut skala viewport layout, agar dimensinya sama besar dengan anotasi lain
+    const s = doc.layouts[0]?.vp?.s, n = s > 0 ? Math.round((UNIT_MM[units] || 1) / s) : 0;
+    if (n >= 1 && n <= 1e6) N = n;
+  }
+  const ps = N / (UNIT_MM[units] || 1);
   const capC = [[box.w, box.s], [box.e, box.s], [box.e, box.n], [box.w, box.n]].map(([lon, lat]) => X.toDwg(lat, lon));
   const bb = { x1: Math.min(...capC.map(p => p.x)), y1: Math.min(...capC.map(p => p.y)), x2: Math.max(...capC.map(p => p.x)), y2: Math.max(...capC.map(p => p.y)) };
   const T = (p, s, hmm, o2 = {}) => ents.push({ type: 'text', p, s, h: hmm * ps, ha: 0, va: 0, rot: 0, layer: 'SITE-TEKS', color: 256, lt: 'ByLayer', lw: -1, ...o2 });
@@ -632,6 +714,9 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
     ents.push({ type: 'text', p: { x: cx, y: cy + 2.2 * ps }, s: `LUAS LAHAN = ${fmtM(site.area)} m²`, h: 3 * ps, ha: 1, va: 2, rot: 0, layer: 'SITE-TEKS', color: 256, lt: 'ByLayer', lw: 35 });
     ents.push({ type: 'text', p: { x: cx, y: cy - 2.6 * ps }, s: `KELILING = ${fmtM(site.per)} m`, h: 2.2 * ps, ha: 1, va: 2, rot: 0, layer: 'SITE-TEKS', color: 256, lt: 'ByLayer', lw: -1 });
   }
+  // garis ukur: polyline merah + dimensi aligned ISO per segmen (+ luas / panjang total)
+  const ms = meas && meas.pts.length >= 2 ? measureEnts(meas, X, ps, o, units) : null;
+  if (ms?.n) { ents.push(...ms.ents); L(`✓ Garis ukur merah: ${ms.n} segmen, panjang total ${fmtM(ms.per, o.dec || 2)} m${ms.area != null ? `, luas ${fmtM(ms.area)} m²` : ''} · dimensi ISO 1:${N}`); }
   // tabel koordinat
   let tx0 = bb.x2 + 14 * ps, ty = bb.y2;
   if (site && o.table) {
@@ -669,6 +754,7 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
       `Titik acuan (${fmtM(geo.x / k, 3)} ; ${fmtM(geo.y / k, 3)} m gambar): ${fmtLat(geo.lat)} ${fmtLon(geo.lon)}`,
       `${u0.label}: E ${fmtM(u0.E, 3)}  N ${fmtM(u0.N, 3)}`,
       site ? `Luas lahan ${fmtM(site.area)} m², keliling ${fmtM(site.per)} m` : null,
+      ms?.n ? `Garis ukur (merah): ${ms.n} segmen, panjang total ${fmtM(ms.per, o.dec || 2)} m${ms.area != null ? `, luas ${fmtM(ms.area)} m²` : ''}; dimensi gaya ISO 129-1 (ISO-25).` : null,
       `Sumber: Google Maps${photoInfo ? ' — ' + photoInfo : ''}. Proyeksi bidang lokal WGS84 (jarak = jarak riil).`,
       obUsed ? `Jejak ${obUsed} bangunan: Google Open Buildings, Microsoft Building Footprints & © kontributor OpenStreetMap (gabungan VIDA, ODbL).` : null,
       `Satuan gambar ${units}; ukuran batas dalam meter. Akurasi posisi mengikuti data peta, verifikasi dengan ukur lapangan.`,
@@ -680,19 +766,23 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
   // 5) masukkan ke dokumen (satu langkah undo)
   app.mutate(() => {
     if (newGeo) { doc.geo = newGeo; if (!doc.model.length) doc.set.ltscale = ps; }
-    for (const [n, p] of Object.entries(LAY)) { const Lr = doc.addLayer(n, p); if (n === 'PETA-FOTO') Lr.plot = true; }
+    const used = new Set(ents.map(e => e.layer));
+    for (const [n, p] of Object.entries(LAY)) if (!only || used.has(n)) { const Lr = doc.addLayer(n, p); if (n === 'PETA-FOTO') Lr.plot = true; }
+    for (const [n, p] of Object.entries(MLAY)) if (used.has(n)) doc.addLayer(n, p);
     if (!doc.ltypes.includes('PHANTOM')) doc.ltypes.push('PHANTOM');
     if (img) { doc.prep(img); doc.model.unshift(img); }
     for (const e of ents) { if (e.layer === 'SITE-BATAS') e.lts = 1; doc.prep(e); doc.model.push(e); }
     const Lo = doc.layouts[0];
-    if (Lo) { if (/^JUDUL GAMBAR$/i.test(Lo.tb.title || '')) Lo.tb.title = 'SITE PLAN'; if (/^LOKASI PROYEK$/i.test(Lo.tb.location || '') && place) { const pl = place.split(', '); let t = pl[0]; if (pl[1] && (t + ', ' + pl[1]).length <= 30) t += ', ' + pl[1]; Lo.tb.location = t.slice(0, 34).toUpperCase(); }
+    if (Lo && (!only || newGeo)) { if (/^JUDUL GAMBAR$/i.test(Lo.tb.title || '')) Lo.tb.title = 'SITE PLAN'; if (/^LOKASI PROYEK$/i.test(Lo.tb.location || '') && place) { const pl = place.split(', '); let t = pl[0]; if (pl[1] && (t + ', ' + pl[1]).length <= 30) t += ', ' + pl[1]; Lo.tb.location = t.slice(0, 34).toUpperCase(); }
       if (/^Semua ukuran dalam milimeter/i.test(Lo.tb.notes || '')) Lo.tb.notes = `Site plan skala 1:${N}. Ukuran batas lahan dalam meter (jarak riil WGS84); satuan gambar ${units}.`;
       const ext = doc.extents(doc.model); Lo.vp = { s: (UNIT_MM[units] || 1) / N, cx: (ext.x1 + ext.x2) / 2, cy: (ext.y1 + ext.y2) / 2, lock: false }; fitVp(Lo, doc); }
   });
   void addL; void rev;
-  const summary = `Site plan diplot: area ${fmtM(b.e - a.e, 1)} × ${fmtM(b.n - a.n, 1)} m, skala anotasi 1:${N}` + (site ? `, luas lahan ${fmtM(site.area)} m², keliling ${fmtM(site.per)} m` : '') + (traced.bld + traced.road ? `, ${traced.bld + traced.bld2} bangunan & ${traced.road} tepi jalan ditrace` : '') + '.';
+  const mTxt = ms?.n ? `garis ukur merah ${ms.n} segmen (total ${fmtM(ms.per, o.dec || 2)} m${ms.area != null ? `, luas ${fmtM(ms.area)} m²` : ''}) + dimensi ISO` : '';
+  const summary = only ? `Diplot: ${mTxt || 'tidak ada garis ukur'}, skala anotasi 1:${N}.`
+    : `Site plan diplot: area ${fmtM(b.e - a.e, 1)} × ${fmtM(b.n - a.n, 1)} m, skala anotasi 1:${N}` + (site ? `, luas lahan ${fmtM(site.area)} m², keliling ${fmtM(site.per)} m` : '') + (mTxt ? ', ' + mTxt : '') + (traced.bld + traced.road ? `, ${traced.bld + traced.bld2} bangunan & ${traced.road} tepi jalan ditrace` : '') + '.';
   app.ui.print(summary, 'ok');
   if (o.bld && img) app.ui.print('Ada bangunan yang belum tergaris? Perintah ATAP (Insert › Klik Atap), lalu klik atapnya di foto.');
   if (newGeo) app.ui.print(`Lokasi gambar: ${fmtLat(geo.lat)} ${fmtLon(geo.lon)} di titik (${fmtM(geo.x, 1)}, ${fmtM(geo.y, 1)}) ${units}. Capture berikutnya otomatis menyambung.`);
-  return { summary, bbox: bb };
+  return { summary, bbox: bb, mbox: ms?.n ? doc.extents(ms.ents) : null };
 }

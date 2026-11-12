@@ -350,6 +350,8 @@ table.lt td.c .off { opacity: .35; }
 .gm-info b { color: var(--tx); }
 .gm-go { height: 36px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .gm-go .ico { width: 18px; height: 18px; }
+.gm-meas { height: 30px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.gm-meas .ico { width: 16px; height: 16px; }
 .gm-bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; display: none; }
 .gm-bar i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .2s; }
 .gm-log { font-size: 11.5px; line-height: 1.5; color: var(--tx2); max-height: 120px; overflow: auto; }
