@@ -1,5 +1,5 @@
 // Shell UI: QAT, ribbon, command line + autocomplete, status bar, palet Properties, dynamic input, editor teks, Start page, keyboard.
-import { $, $$, h, esc, win, menu, closeMenu, toast, sel, isOpen, closeWin } from './dom.js';
+import { $, $$, h, esc, win, menu, closeMenu, setMenu, toast, sel, isOpen, closeWin } from './dom.js';
 import { icon } from './icons.js';
 import { ACI, LTYPES, LWEIGHTS, lwName, colorName, TYPE_NAMES, PATTERNS, dimValue, fmtNum, curveLen, entArea, CAP, decodeText, prims, hatchLines, loopPts, xform } from './ent.js';
 import { D2R, R2D, dist, ang, polar, an, sweepOf, len, M, add, sub, mul, unit } from './geom.js';
@@ -96,8 +96,10 @@ export class UI {
     search.addEventListener('keydown', e => { if (e.key === 'Enter') { const t = search.value.trim(); search.value = ''; search.blur(); if (t) { const n = this.ed.findCmd(t.split(/\s+/)[0]); if (n) this.app.exec(t); else D.help(this, t); } } e.stopPropagation(); });
   }
   appMenu(e) {
+    const open = document.querySelector('.appmenu');
+    closeMenu(); open?.remove();
+    if (open) return; // klik tombol A lagi = tutup menu
     const r = $('#appbtn').getBoundingClientRect();
-    closeMenu();
     const m = h('div', { class: 'menu appmenu' });
     const L = h('div', { class: 'am-l' }), R = h('div', { class: 'am-r' }, h('h5', {}, 'Recent Documents'));
     const it = (i, l, c) => L.append(h('div', { onclick: () => { closeMenu(); this.app.exec(c); } }, h('span', { html: icon(i) }), l));
@@ -107,7 +109,8 @@ export class UI {
     rec.slice(0, 12).forEach(x => R.append(h('div', { title: x.name, onclick: () => { closeMenu(); this.app.openRecent(x.key); } }, x.name)));
     m.append(L, R, h('div', { class: 'am-f' }, h('button', { class: 'btn sm', onclick: () => { closeMenu(); this.app.exec('OPTIONS'); } }, 'Options'), h('button', { class: 'btn sm', onclick: () => { closeMenu(); this.app.exec('CLOSE'); } }, 'Exit Drawing')));
     document.getElementById('overlay').append(m); m.style.left = r.left + 'px'; m.style.top = r.bottom + 'px';
-    setTimeout(() => { const off = ev => { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener('pointerdown', off, true); } }; document.addEventListener('pointerdown', off, true); }, 0);
+    setMenu(m); // tanpa ini closeMenu() di item tidak menutup menu, dan menu tertinggal menumpuk di atas dialog
+    setTimeout(() => { const off = ev => { if (!m.contains(ev.target) && !$('#appbtn').contains(ev.target)) { m.remove(); document.removeEventListener('pointerdown', off, true); } }; document.addEventListener('pointerdown', off, true); }, 0);
     void e;
   }
   setTitle() { $('#docname').textContent = this.doc.name + (this.doc.dirty ? ' *' : ''); document.title = this.doc.name + ' — Amatu CAD'; }

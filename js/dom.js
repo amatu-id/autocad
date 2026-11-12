@@ -50,6 +50,8 @@ export function closeWin(id) { openWins.get(id)?.close(); }
 // Menu konteks
 let curMenu = null;
 export function closeMenu() { curMenu?.remove(); curMenu = null; }
+// Menu buatan sendiri (mis. menu aplikasi) didaftarkan sebagai menu aktif agar closeMenu() (klik item, Esc, klik kanvas) ikut menutupnya.
+export function setMenu(m) { curMenu = m; }
 export function menu(items, x, y, cls = '') {
   closeMenu();
   const m = h('div', { class: 'menu ' + cls });

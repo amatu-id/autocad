@@ -253,7 +253,11 @@ table.lt td.c .off { opacity: .35; }
 .menu > hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 .menu > .mh { padding: 6px 12px 2px; color: var(--tx3); font-size: 11px; cursor: default; }
 .menu > .mh:hover { background: none; color: var(--tx3); }
-.appmenu { width: 460px; display: grid; grid-template-columns: 190px 1fr; padding: 0; }
+.appmenu { width: 500px; max-width: calc(100vw - 8px); display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); padding: 0; }
+/* Kolom & footer menu aplikasi juga anak langsung .menu: batalkan gaya baris ".menu > div" (flex mendatar + nowrap + hover biru), kalau tidak item berjajar ke samping dan teksnya saling tumpuk. */
+.appmenu > .am-l, .appmenu > .am-r { display: block; min-width: 0; white-space: normal; }
+.menu.appmenu > div { cursor: default; }
+.menu.appmenu > div:hover { background: none; color: inherit; }
 .appmenu .am-l { border-right: 1px solid var(--line); padding: 6px 0; }
 .appmenu .am-l div { display: flex; gap: 10px; align-items: center; padding: 7px 12px; cursor: pointer; }
 .appmenu .am-l div:hover { background: var(--hov); }
@@ -262,6 +266,8 @@ table.lt td.c .off { opacity: .35; }
 .appmenu .am-r h5 { margin: 0 0 8px; color: var(--tx2); font-weight: 500; }
 .appmenu .am-r div { padding: 5px 6px; border-radius: 3px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appmenu .am-r div:hover { background: var(--hov); }
+.appmenu .am-r .hint { cursor: default; }
+.appmenu .am-r .hint:hover { background: none; }
 .appmenu .am-f { grid-column: 1/3; display: flex; justify-content: flex-end; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
 
 /* toast */
