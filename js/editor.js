@@ -80,6 +80,7 @@ export class Editor {
     if (!L) {
       c.fillStyle = this.opt.bg; c.fillRect(0, 0, v.w, v.h);
       if (this.T.grid) drawGrid(c, v, this.opt.gridX, { minor: 'rgba(255,255,255,0.045)', major: 'rgba(255,255,255,0.10)', ax: 'rgba(230,80,80,0.35)', ay: 'rgba(80,200,90,0.35)' });
+      if (this.underlay) try { this.underlay(c, v); } catch (err) { console.warn(err); } // foto pemandu animasi Auto Trace
       drawEntities(c, this.visible(this.doc.model), this.doc, v, { bg: 'dark', lwt: this.T.lwt, bgColor: this.opt.bg });
     } else {
       c.fillStyle = '#3b4048'; c.fillRect(0, 0, v.w, v.h);
@@ -88,7 +89,11 @@ export class Editor {
     c.restore();
     this.ui?.onRegen?.();
   }
-  visible(list) { const I = this.app.isoSet, H = this.app.hideSet; return I ? list.filter(e => I.has(e)) : H ? list.filter(e => !H.has(e)) : list; }
+  visible(list) {
+    const I = this.app.isoSet, H = this.app.hideSet, A = this.animHide; // A: entitas yang belum "tergambar" oleh animasi Auto Trace
+    const l = I ? list.filter(e => I.has(e)) : H ? list.filter(e => !H.has(e)) : list;
+    return A?.size ? l.filter(e => !A.has(e)) : l;
+  }
   drawSel() {
     const c = this.ctx(this.cv.sel), v = this.view;
     c.clearRect(0, 0, v.w, v.h);
@@ -185,6 +190,7 @@ export class Editor {
     }
     // ikon UCS
     this.drawUCS(c, v, paper);
+    if (this.anim) try { this.anim(c, v); } catch (err) { console.warn(err); } // pena animasi Auto Trace
     this.ui?.onOver?.();
   }
   drawMarker(c, S) {

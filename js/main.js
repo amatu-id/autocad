@@ -13,6 +13,7 @@ import { icon } from './icons.js';
 import { buildSample } from './sample.js';
 import * as D from './dialogs.js';
 import { openGeoMap, roofCmd } from './geomap.js';
+import { autoTrace, imageChoice, pasteImage } from './autotrace.js';
 
 // ---------- penyimpanan (IndexedDB) ----------
 const idb = (() => {
@@ -248,7 +249,13 @@ class App {
   bindDrop() {
     const w = document.body;
     w.addEventListener('dragover', e => { e.preventDefault(); });
-    w.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (!f) return; if (/^image\//.test(f.type)) this.attachImage(f); else this.openFile(f); });
+    w.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (!f) return; if (/^image\//.test(f.type)) imageChoice(this, f); else this.openFile(f); });
+    // tempel gambar (Ctrl+V) saat fokus di command line / kanvas → Auto Trace atau sisipkan
+    document.addEventListener('paste', e => {
+      const t = e.target; if (t?.closest?.('.win') && t !== $('#cmdin')) return;
+      const f = [...(e.clipboardData?.files || [])].find(x => /^image\//.test(x.type)); if (!f) return;
+      e.preventDefault(); imageChoice(this, f);
+    });
   }
   async attachImage(file) {
     if (!file) file = await new Promise(res => { const i = $('#filein'); i.accept = 'image/*'; i.value = ''; i.onchange = () => res(i.files[0]); i.click(); });
@@ -396,6 +403,7 @@ class App {
           act('open', 'Open Files…', 'DXF (R12 – 2018/2027) atau .amcad · Ctrl+O', () => this.open()),
           act('door', 'Contoh Denah Rumah', 'Pelajari fitur dengan contoh', () => this.newDoc({ sample: true, name: 'Denah-Tipe-45' })),
           act('map', 'Site Plan dari Google Maps', 'Cari lokasi → capture → skala riil + tracing otomatis', () => { const blank = !this.doc.model.length; if (!blank) this.newDoc({ name: 'Site-Plan' }); else this.showStartPage(false); openGeoMap(this, { mode: 'poly' }); }),
+          act('autotrace', 'Gambar dari Foto / Sketsa', 'Auto Trace: unggah gambar → garis CAD otomatis', () => { const blank = !this.doc.model.length; if (!blank) this.newDoc({ name: 'Auto-Trace' }); else this.showStartPage(false); autoTrace(this); }),
           this.docs.some(d => d.model.length) ? act('start', 'Kembali ke gambar', this.doc.name, () => this.showStartPage(false)) : null,
           act('help', 'Perintah & Shortcut', 'F1', () => D.help(this.ui)))),
       h('div', {}, h('h3', { class: 'sp-h' }, recent.length ? 'Recent Documents & Contoh' : 'Contoh'), cards,
@@ -421,6 +429,8 @@ class App {
     C('GEOMAPIMAGE', () => openGeoMap(this, { mode: 'rect' }), { alias: ['CAPTUREMAP', 'MAPCAPTURE'] });
     C('SITEPLAN', () => openGeoMap(this, { mode: 'poly' }), { alias: ['BATASLAHAN', 'SP'] });
     C('ATAP', ed => roofCmd(this, ed), { noUndo: false, alias: ['KLIKATAP', 'TRACEATAP', 'TRACEROOF', 'ROOF'] });
+    C('AUTOTRACE', () => { autoTrace(this); }, { alias: ['TRACEIMAGE', 'IMAGETRACE', 'RETRACE', 'AUTOTRACING', 'VECTORIZE', 'TRACEGAMBAR', 'GAMBAROTOMATIS', 'FOTOKEGARIS', 'IMG2CAD', 'AT'] });
+    this.pasteImage = () => pasteImage(this);
     C('GEOREMOVE', () => { if (!this.doc.geo) { this.ui.print('Gambar ini belum punya lokasi geografis.'); return; } this.mutate(() => { this.doc.geo = null; }); this.ui.print('Lokasi geografis dihapus.', 'ok'); }, { alias: ['GEOLOCATIONREMOVE'] });
     C('IMAGEPLACE', async ed => {
       const I = ed.imgPending; if (!I) return; ed.imgPending = null;

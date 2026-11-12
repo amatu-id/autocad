@@ -113,6 +113,7 @@ const P = {
   roof: s('M4 16l12-9 12 9', R, 2.2) + s('M7.5 14v11h17V14', 'currentColor', 1.6) + f('M17 15.5l9.5 4.2-4.1 1.4-1.6 4.1z', B) + s('M22.4 21.1l3.4 3.6', B, 1.6),
   siteplan: s('M5 6h22v20H5z', 'currentColor', 1.6) + s('M9 22l3-11 11 3-2 9z', R, 1.8) + s('M14 15h4v4h-4z', B, 1.3) + s('M8 26h18', Y, 1.2),
   image: s('M4 6h24v20H4z') + s('M4 22l7-7 6 6 4-4 7 7', B) + dot(22, 11, Y, 2.4),
+  autotrace: s('M3.5 4.5h15v11h-15z', 'currentColor', 1.6) + s('M3.5 13l4-3.6 3.4 3 2.6-2 5 3.8', 'currentColor', 1.3) + s('M6 27.5c3.2-6.4 7.4-.6 10.6-5.6S22.4 15 26 17', B, 2.2) + f('M29.4 8.6l-6.6 8.2-1.4 3.8 3.6-1.8 6.6-8.2z', Y) + dot(6, 27.5, B, 1.9),
   find: `<circle cx="13" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2"/>` + s('M19 19l9 9') + t(13, 16.5, 'A', B, 10),
   list: s('M6 6h20v20H6z', 'currentColor', 1.4) + s('M10 11h12M10 16h12M10 21h8', B, 1.5),
   new: s('M6 4h13l7 7v17H6z') + s('M19 4v7h7') + s('M16 15v8M12 19h8', G),

@@ -1315,7 +1315,7 @@ def('COPYCLIP', async ed => { const S = await ed.getSel(); if (S.length) { setCl
 def('CUTCLIP', async ed => { const S = await ed.getSel(); if (S.length) { setClip(ed, S); S.forEach(e => ed.remove(e)); } });
 def('COPYBASE', async ed => { const b = await ed.getPoint('Specify base point:'); const S = await ed.getSel(); if (S.length) setClip(ed, S, b); });
 async function paste(ed, asBlock, orig) {
-  const C = getClip(ed); if (!C || !C.ents?.length) { ed.msg('Clipboard kosong.'); return; }
+  const C = getClip(ed); if (!C || !C.ents?.length) { if (!asBlock && !orig && await ed.app.pasteImage?.()) return; ed.msg('Clipboard kosong.'); return; }
   for (const [k, b] of Object.entries(C.blocks || {})) if (!ed.doc.blocks[k]) ed.doc.blocks[k] = b;
   for (const [k, l] of Object.entries(C.layers || {})) if (!ed.doc.layers[k]) ed.doc.layers[k] = l;
   let p = orig ? C.base : await ed.getPoint('Specify insertion point:', { preview: q => C.ents.slice(0, 400).map(e => xform(clone(e), M.tr(q.x - C.base.x, q.y - C.base.y))) });
