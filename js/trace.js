@@ -254,6 +254,19 @@ export function open3(m, W, H) {
   return m;
 }
 
+// Closing biner (dilatasi lalu erosi, separabel, r = jari-jari): tutup celah / retakan ≤ 2r px di dalam blok bangunan
+// (garis dinding 2.5D di antara atap yang bersentuhan) yang kalau dibiarkan jadi garis "paku" tipis di hasil trace.
+export function close3(m, W, H, r = 1) {
+  const t = new Uint8Array(m.length), d = new Uint8Array(m.length);
+  const pass = (src, dst, dil) => { // satu langkah 3×3: horizontal lalu vertikal
+    for (let y = 0; y < H; y++) { const o = y * W; for (let x = 0; x < W; x++) { const a = x > 0 ? src[o + x - 1] : src[o + x], b = x < W - 1 ? src[o + x + 1] : src[o + x]; t[o + x] = dil ? a | src[o + x] | b : a & src[o + x] & b; } }
+    for (let y = 0; y < H; y++) { const o = y * W; for (let x = 0; x < W; x++) { const a = y > 0 ? t[o - W + x] : t[o + x], b = y < H - 1 ? t[o + W + x] : t[o + x]; dst[o + x] = dil ? a | t[o + x] | b : a & t[o + x] & b; } }
+  };
+  for (let k = 0; k < r; k++) { pass(k ? d : m, d, true); }
+  for (let k = 0; k < r; k++) { pass(d, k === r - 1 ? m : d, false); }
+  return m;
+}
+
 // ---------- Jalur utama ----------
 // cls: Uint8Array W×H hasil classify(). opt: { gsd (m/px), clip {x1,y1,x2,y2} px, want {bld, road, water, green}, ortho, eps }
 export function traceClasses(cls, W, H, opt = {}) {
@@ -271,6 +284,7 @@ export function traceClasses(cls, W, H, opt = {}) {
   for (const [name, test, minM2] of jobs) {
     const isB = name.startsWith('bld');
     make(test); if (isB || name === 'green') open3(mask, W, H);
+    if (isB) close3(mask, W, H, opt.closeR ?? 2);
     const cs = contours(mask, W, H, isB && opt.wallShift);
     let n = 0;
     const polys = [];

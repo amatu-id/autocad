@@ -5,6 +5,7 @@ import { h, win, toast, sel, chk } from './dom.js';
 import { icon } from './icons.js';
 import { ll2px, px2ll, gsd, makeENU, geoXform, utm, tm3, fmtLat, fmtLon, azimuth, fmtAz, parseLoc, gmapsUrl } from './geo.js';
 import { TRACE_STYLE } from './trace.js';
+import { fgbBBox } from './fgb.js';
 import { LIBRARY } from './library.js';
 import { PREF_SCALES, UNIT_MM, fitVp } from './doc.js';
 
@@ -17,6 +18,17 @@ export const SRC = {
   esri: { n: 'Esri', max: 19, ts: 1, url: (x, y, z) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}` },
 };
 const traceUrl = (x, y, z) => `https://mt${g4(x, y)}.google.com/vt/lyrs=m&x=${x}&y=${y}&z=${z}&scale=2&apistyle=${encodeURIComponent(TRACE_STYLE)}`;
+// Jejak bangunan terbuka per negara: Google Open Buildings v3 + Microsoft + OSM (gabungan VIDA, source.coop), FlatGeobuf ber-indeks spasial
+const OB_URL = c => `https://data.source.coop/vida/google-microsoft-osm-open-buildings/flatgeobuf/by_country/country_iso=${c}/${c}.fgb`;
+const ISO3 = Object.fromEntries(('AD AND,AE ARE,AF AFG,AG ATG,AI AIA,AL ALB,AM ARM,AO AGO,AR ARG,AS ASM,AT AUT,AU AUS,AW ABW,AX ALA,AZ AZE,BA BIH,BB BRB,BD BGD,BE BEL,BF BFA,BG BGR,BH BHR,BI BDI,BJ BEN,BL BLM,BM BMU,BN BRN,BO BOL,BQ BES,BR BRA,BS BHS,BT BTN,BW BWA,BY BLR,BZ BLZ,CA CAN,CC CCK,CD COD,CF CAF,CG COG,CH CHE,CI CIV,CK COK,CL CHL,CM CMR,CN CHN,CO COL,CR CRI,CU CUB,CV CPV,CW CUW,CX CXR,CY CYP,CZ CZE,DE DEU,DJ DJI,DK DNK,DM DMA,DO DOM,DZ DZA,EC ECU,EE EST,EG EGY,EH ESH,ER ERI,ES ESP,ET ETH,FI FIN,FJ FJI,FK FLK,FM FSM,FO FRO,FR FRA,GA GAB,GB GBR,GD GRD,GE GEO,GF GUF,GG GGY,GH GHA,GI GIB,GL GRL,GM GMB,GN GIN,GP GLP,GQ GNQ,GR GRC,GT GTM,GU GUM,GW GNB,GY GUY,HK HKG,HN HND,HR HRV,HT HTI,HU HUN,ID IDN,IE IRL,IL ISR,IM IMN,IN IND,IQ IRQ,IR IRN,IS ISL,IT ITA,JE JEY,JM JAM,JO JOR,JP JPN,KE KEN,KG KGZ,KH KHM,KI KIR,KM COM,KN KNA,KP PRK,KR KOR,KW KWT,KY CYM,KZ KAZ,LA LAO,LB LBN,LC LCA,LI LIE,LK LKA,LR LBR,LS LSO,LT LTU,LU LUX,LV LVA,LY LBY,MA MAR,MC MCO,MD MDA,ME MNE,MF MAF,MG MDG,MH MHL,MK MKD,ML MLI,MM MMR,MN MNG,MO MAC,MP MNP,MQ MTQ,MR MRT,MS MSR,MT MLT,MU MUS,MV MDV,MW MWI,MX MEX,MY MYS,MZ MOZ,NA NAM,NC NCL,NE NER,NF NFK,NG NGA,NI NIC,NL NLD,NO NOR,NP NPL,NR NRU,NU NIU,NZ NZL,OM OMN,PA PAN,PE PER,PF PYF,PG PNG,PH PHL,PK PAK,PL POL,PM SPM,PR PRI,PS PSE,PT PRT,PW PLW,PY PRY,QA QAT,RE REU,RO ROU,RS SRB,RU RUS,RW RWA,SA SAU,SB SLB,SC SYC,SD SDN,SE SWE,SG SGP,SH SHN,SI SVN,SK SVK,SL SLE,SM SMR,SN SEN,SO SOM,SR SUR,SS SSD,ST STP,SV SLV,SX SXM,SY SYR,SZ SWZ,TC TCA,TD TCD,TG TGO,TH THA,TJ TJK,TL TLS,TM TKM,TN TUN,TO TON,TR TUR,TT TTO,TV TUV,TW TWN,TZ TZA,UA UKR,UG UGA,US USA,UY URY,UZ UZB,VC VCT,VE VEN,VG VGB,VI VIR,VN VNM,VU VUT,WS WSM,YE YEM,YT MYT,ZA ZAF,ZM ZMB,ZW ZWE').split(',').map(s => s.split(' ')));
+async function openBuildings(bb, revJ, signal) {
+  const t0 = performance.now(); let cc = null;
+  try { const j = await Promise.race([revJ, new Promise(r => setTimeout(r, 3000))]); cc = ISO3[String(j?.features?.[0]?.properties?.countrycode || '').toUpperCase()] || null; } catch { }
+  if (!cc && bb.c.lat > -11.2 && bb.c.lat < 6.3 && bb.c.lon > 94.8 && bb.c.lon < 141.1) cc = 'IDN'; // tanpa geocoder: kotak Indonesia
+  if (!cc) throw new Error('negara lokasi tidak dikenali');
+  const r = await fgbBBox(OB_URL(cc), { minX: bb.w, minY: bb.s, maxX: bb.e, maxY: bb.n }, { signal, maxFeat: 12000 });
+  r.ms = performance.now() - t0; r.cc = cc; return r;
+}
 const LAY = {
   'PETA-FOTO': { color: 8, lw: -3 }, 'SITE-BATAS': { color: 1, lw: 50, lt: 'PHANTOM' }, 'SITE-BANGUNAN': { color: 7, lw: 35 },
   'SITE-JALAN': { color: 8, lw: 25 }, 'SITE-AIR': { color: 5, lw: 25 }, 'SITE-HIJAU': { color: 3, lw: 18 },
@@ -209,7 +221,7 @@ class GeoView {
 export function openGeoMap(app, opt = {}) {
   const ed = app.ed, doc = app.doc;
   const saved = LS.get('amatucad-geomap', { lat: -6.1754, lon: 106.8272, zoom: 16, src: 'sat' });
-  const o = Object.assign({ photo: 'sat', bld: true, road: true, water: true, green: true, boundary: true, dims: true, table: true, notes: true, coord: 'utm', detail: 'std', dec: 2 }, LS.get('amatucad-geomap-opt', {}));
+  const o = Object.assign({ photo: 'sat', bld: true, obData: true, snap: true, road: true, water: true, green: true, boundary: true, dims: true, table: true, notes: true, coord: 'utm', detail: 'std', dec: 2 }, LS.get('amatucad-geomap-opt', {}));
   const geo = doc.geo;
   const mapBox = h('div', { class: 'gm-map' });
   const info = h('div', { class: 'gm-info hint' });
@@ -264,7 +276,10 @@ export function openGeoMap(app, opt = {}) {
     h('fieldset', {}, h('legend', {}, 'Area terpilih'), info),
     h('fieldset', {}, h('legend', {}, 'Isi yang diplot'), h('div', { class: 'col' },
       h('div', { class: 'grid2' }, 'Foto peta:', photoSel, 'Detail:', detSel),
-      O('bld', 'Tracing bangunan'), O('road', 'Tracing tepi jalan'), O('water', 'Tracing sungai / air'), O('green', 'Tracing taman / area hijau'),
+      O('bld', 'Tracing bangunan'),
+      Object.assign(O('obData', '+ Data bangunan terbuka (lebih lengkap)'), { title: 'Jejak bangunan Google Open Buildings + Microsoft + OSM (gabungan VIDA, source.coop): rumah yang tidak ada di peta Google ikut tergambar. Hanya bagian area ini yang diunduh (beberapa ratus KB).' }),
+      Object.assign(O('snap', 'Selaraskan garis ke foto satelit'), { title: 'Garis bangunan, jalan & air digeser / diputar sedikit agar pas dengan tepi atap & jalan di foto satelit yang diplot (data peta umumnya bergeser 1–4 m dari foto).' }),
+      O('road', 'Tracing tepi jalan'), O('water', 'Tracing sungai / air'), O('green', 'Tracing taman / area hijau'),
       O('boundary', 'Batas lahan (poligon) + ukuran riil & luas'), O('table', 'Tabel koordinat titik batas'), O('notes', 'Arah utara, skala grafis & keterangan'))),
     h('fieldset', {}, h('legend', {}, 'Ukuran & koordinat'), h('div', { class: 'grid2' }, 'Format ukuran:', decSel, 'Tabel koordinat:', coordSel)),
     geoNote, btnCap, h('div', {}, status, bar), log,
@@ -371,6 +386,49 @@ function solve3(A, b) { // eliminasi Gauss 3×3
 }
 const blobURL = c => new Promise(r => c.toBlob(b => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }, 'image/jpeg', 0.88));
 
+// Bangunan: data terbuka (per rumah) + trace peta Google → diselaraskan ke tepi atap di foto satelit
+// (geser global + per bangunan + per sisi, di worker) → duplikat / tumpang tindih dibuang.
+// Garis jalan/air/hijau peta Google ikut dikoreksi geser registrasi peta Google terhadap foto, lalu dipotong ulang ke area.
+async function alignStep({ wk, msg, M, gB, gL, photo, obP, box, o, setProg, L }) {
+  const snap = o.snap !== false && !!photo && photo.src !== 'map';
+  const F = snap ? photo.M : M; // bingkai piksel kerja: foto (bila diselaraskan) atau mosaik trace
+  const toF = (lat, lon) => { const q = ll2px(lat, lon, F.z); return [(q.x - F.X0) * F.ts, (q.y - F.Y0) * F.ts]; };
+  const fromF = (x, y) => px2ll(F.X0 + x / F.ts, F.Y0 + y / F.ts, F.z);
+  const conv = P => { const pts = []; for (let i = 0; i < P.pts.length; i += 2) { const ll = M.toLL(P.pts[i], P.pts[i + 1]); pts.push(...toF(ll.lat, ll.lon)); } return pts; };
+  const ca = toF(box.n, box.w), cb = toF(box.s, box.e);
+  const inside = p => { let sx = 0, sy = 0; for (let i = 0; i < p.length; i += 2) { sx += p[i]; sy += p[i + 1]; } sx /= p.length / 2; sy /= p.length / 2; return sx >= ca[0] && sx <= cb[0] && sy >= ca[1] && sy <= cb[1]; };
+  const polys = gB.map(P => ({ pts: conv(P), src: 'g' })), lines = gL.map(P => ({ pts: conv(P), closed: P.closed, k: P.k }));
+  if (obP) {
+    setProg('Mengambil data bangunan terbuka…', 0.85);
+    const ob = await obP;
+    if (ob.err) L(`Data bangunan terbuka tidak dipakai (${ob.err.name === 'AbortError' ? 'koneksi terlalu lambat' : /fetch|network/i.test(ob.err.message) ? 'server data tidak terjangkau' : /404/.test(ob.err.message) ? 'belum tersedia untuk negara ini' : ob.err.message}); hanya trace peta Google.`, 'err');
+    else {
+      const by = {};
+      for (const f of ob.feats) {
+        const r = f.rings[0]; if (!r || r.length < 8) continue;
+        const pts = []; for (let i = 0; i < r.length; i += 2) pts.push(...toF(r[i + 1], r[i]));
+        if (Math.hypot(pts[0] - pts[pts.length - 2], pts[1] - pts[pts.length - 1]) < 1e-6) pts.length -= 2; // titik penutup ganda
+        if (pts.length < 6 || !inside(pts)) continue;
+        polys.push({ pts, src: 'ob', conf: f.props.confidence ?? 0.7 }); const s = f.props.bf_source || 'lain'; by[s] = (by[s] || 0) + 1;
+      }
+      const n = Object.values(by).reduce((a, b) => a + b, 0);
+      L(`✓ Data bangunan terbuka: ${n} bangunan${n ? ` (${Object.entries(by).map(([k, v]) => `${k} ${v}`).join(', ')})` : ''} · ${fmtM(ob.ms / 1000, 1)} dtk`);
+    }
+  }
+  if (!snap && !polys.some(P => P.src === 'ob')) return { polys, lines, fromF }; // tidak ada yang perlu diselaraskan / digabung
+  setProg(snap ? 'Menyelaraskan garis ke foto satelit…' : 'Menggabungkan data bangunan…', 0.88);
+  if (snap) { const d = photo.cv.getContext('2d').getImageData(0, 0, photo.M.W, photo.M.H), p = msg(); wk.postMessage({ type: 'photo', W: photo.M.W, H: photo.M.H, buf: d.data.buffer }, [d.data.buffer]); await p; }
+  const p = msg(); wk.postMessage({ type: 'bld', polys, lines, W: F.W, H: F.H, clip: { x1: ca[0], y1: ca[1], x2: cb[0], y2: cb[1] }, opt: { snap, gsd: gsd(box.c.lat, F.z, F.ts) } });
+  const rb = await p;
+  const nOb = rb.polys.filter(P => P.src === 'ob').length, ok = rb.polys.filter(P => P.ok).length, sh = s => s && (s.dx || s.dy) ? fmtM(Math.hypot(s.dx, s.dy), 2) + ' m' : null;
+  if (snap) {
+    const so = sh(rb.glob?.ob), sg = sh(rb.glob?.g);
+    L(`✓ Diselaraskan ke foto: ${ok} dari ${rb.polys.length} bangunan pas ke tepi atap${so ? `; koreksi geser data terbuka ${so}` : ''}${sg ? `; koreksi geser peta Google ${sg} (juga jalan/air)` : ''} · ${fmtM(rb.ms / 1000, 1)} dtk`);
+  }
+  if (rb.polys.length) L(`✓ Bangunan: ${rb.polys.length} (${nOb} data terbuka + ${rb.polys.length - nOb} peta Google${rb.n > rb.polys.length ? `; ${rb.n - rb.polys.length} duplikat/tumpang tindih dibuang` : ''})`);
+  return { polys: rb.polys, lines: rb.lines, fromF };
+}
+
 // ================= Capture → gambar =================
 export async function capture(app, { shape, box, o, setProg = () => { }, L = () => { } }) {
   const doc = app.doc, units = doc.set.units || 'mm', k = 1000 / (UNIT_MM[units] || 1);
@@ -385,7 +443,12 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
   const X = geoXform(geo);
   const ents = [], addL = [];
   let img = null, photoInfo = '', place = '';
-  const rev = fetch(`https://photon.komoot.io/reverse?lat=${box.c.lat}&lon=${box.c.lon}&limit=1`).then(r => r.json()).then(j => { const P = j.features?.[0]?.properties; if (P) place = [P.name, P.street, P.district || P.locality, P.city || P.county, P.state].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).join(', '); }).catch(() => { });
+  const revJ = fetch(`https://photon.komoot.io/reverse?lat=${box.c.lat}&lon=${box.c.lon}&limit=1`).then(r => r.json()).catch(() => null);
+  const rev = revJ.then(j => { const P = j?.features?.[0]?.properties; if (P) place = [P.name, P.street, P.district || P.locality, P.city || P.county, P.state].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).join(', '); });
+  // jejak bangunan terbuka diunduh paralel dengan foto & tile trace (hanya beberapa ratus KB lewat HTTP Range)
+  const obAbort = new AbortController(), obTimer = setTimeout(() => obAbort.abort(), 45000);
+  const obP = o.bld && o.obData !== false ? openBuildings(box, revJ, obAbort.signal).catch(e => ({ err: e })) : null;
+  let photo = null;
   // 2) foto
   if (o.photo !== 'none') {
     const S = SRC[o.photo]; let z = pickZoom(box, S.max, S.ts, maxPx(o));
@@ -433,14 +496,16 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
     img = { type: 'image', p: bl, w: Wo * g * k, h: Ho * g * k, rot: geo.rot || 0, img: key, fade: 30, name: `Peta ${S.n} z${z}`, layer: 'PETA-FOTO', color: 256, lt: 'ByLayer', lw: -1, geo: { z, gsd: g, src: o.photo } };
     photoInfo = `foto ${S.n} zoom ${z} (${fmtM(g * 100, 1)} cm/px, ${Wo}×${Ho} px${fail ? `, ${fail} tile diganti zoom ${z - 1}` : ''}, residu proyeksi ${fmtM(res * 1000, 2)} mm)`;
     L(`✓ Foto: ${photoInfo}`);
+    photo = { M, cv, src: o.photo };
   }
   // 3) tracing
   const want = { bld: o.bld, road: o.road, water: o.water, green: o.green }, traced = { bld: 0, bld2: 0, road: 0, water: 0, green: 0 };
+  let obUsed = 0; // jumlah bangunan dari data terbuka (untuk atribusi lisensi di keterangan)
   if (want.bld || want.road || want.water || want.green) {
     const E = makeENU(box.c.lat, box.c.lon), a = E.fwd(box.s, box.w), b = E.fwd(box.n, box.e), m = Math.max(15, 0.08 * Math.max(b.e - a.e, b.n - a.n));
     const p1 = E.inv(a.e - m, a.n - m), p2 = E.inv(b.e + m, b.n + m), tb = { s: p1.lat, w: p1.lon, n: p2.lat, e: p2.lon };
     const z = pickZoom(tb, o.detail === 'high' ? 21 : 20, 2, maxPx(o)), M = mosaic(tb, z, 2);
-    const wk = new Worker(new URL('./trace-worker.js', import.meta.url), { type: 'module' });
+    const wk = new Worker(new URL('./trace-worker.js?v=2', import.meta.url), { type: 'module' }); // ?v: jangan pakai worker lama dari cache (tak kenal pesan 'photo'/'bld')
     const msg = () => new Promise((res, rej) => { wk.onmessage = e => e.data.type === 'error' ? rej(new Error(e.data.msg)) : res(e.data); wk.onerror = e => rej(new Error(e.message || 'Worker gagal')); });
     try {
       let p = msg(); wk.postMessage({ type: 'init', W: M.W, H: M.H }); await p;
@@ -460,13 +525,20 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
       const ca = ll2px(box.n, box.w, z), cb = ll2px(box.s, box.e, z), clip = { x1: (ca.x - M.X0) * 2, y1: (ca.y - M.Y0) * 2, x2: (cb.x - M.X0) * 2, y2: (cb.y - M.Y0) * 2 };
       p = msg(); wk.postMessage({ type: 'run', opt: { gsd: gsd(box.c.lat, z, 2), clip, want, ortho: true } });
       const r = await p;
-      const LY = { bld: 'SITE-BANGUNAN', bld2: 'SITE-BANGUNAN', road: 'SITE-JALAN', water: 'SITE-AIR', green: 'SITE-HIJAU' };
-      for (const P of r.polys) {
-        const pts = []; for (let i = 0; i < P.pts.length; i += 2) { const ll = M.toLL(P.pts[i], P.pts[i + 1]), q = X.toDwg(ll.lat, ll.lon); pts.push({ x: q.x, y: q.y, b: 0 }); }
-        ents.push({ type: 'pline', pts, closed: P.closed, layer: LY[P.k], color: 256, lt: 'ByLayer', lw: -1 }); traced[P.k]++;
-      }
-      L(`✓ Tracing zoom ${z} (${fmtM(gsd(box.c.lat, z, 2) * 100, 1)} cm/px): ${traced.bld + traced.bld2} bangunan, ${traced.road} tepi jalan, ${traced.water} air, ${traced.green} hijau${fail ? ` · ${fail} tile gagal` : ''}`);
-    } finally { wk.terminate(); }
+      const LY = { bld: 'SITE-BANGUNAN', bld2: 'SITE-BANGUNAN', road: 'SITE-JALAN', water: 'SITE-AIR', green: 'SITE-HIJAU' }, gB = [], gL = [];
+      const pline = (pts, closed, layer) => ents.push({ type: 'pline', pts, closed, layer, color: 256, lt: 'ByLayer', lw: -1 });
+      const toDwgPts = (P, T) => { const pts = []; for (let i = 0; i < P.pts.length; i += 2) { const ll = T(P.pts[i], P.pts[i + 1]), q = X.toDwg(ll.lat, ll.lon); pts.push({ x: q.x, y: q.y, b: 0 }); } return pts; };
+      for (const P of r.polys) (P.k === 'bld' || P.k === 'bld2' ? gB : gL).push(P);
+      const cnt = k => gL.filter(P => P.k === k).length;
+      L(`✓ Tracing peta Google zoom ${z} (${fmtM(gsd(box.c.lat, z, 2) * 100, 1)} cm/px): ${gB.length} bangunan, ${cnt('road')} tepi jalan, ${cnt('water')} air, ${cnt('green')} hijau${fail ? ` · ${fail} tile gagal` : ''}`);
+      let A = null;
+      try { A = await alignStep({ wk, msg, M, gB, gL, photo, obP, box, o, setProg, L }); }
+      catch (e) { console.error(e); L(`Penggabungan / penyelarasan ke foto gagal (${e.message || e}); dipakai trace peta Google apa adanya.`, 'err'); }
+      if (A) {
+        for (const P of A.lines) { pline(toDwgPts(P, A.fromF), P.closed, LY[P.k]); traced[P.k]++; }
+        for (const P of A.polys) { pline(toDwgPts(P, A.fromF), true, LY.bld); traced.bld++; if (P.src === 'ob') obUsed++; }
+      } else for (const P of r.polys) { const b = P.k === 'bld' || P.k === 'bld2'; pline(toDwgPts(P, M.toLL), b || P.closed, LY[P.k]); traced[b ? 'bld' : P.k]++; }
+    } finally { wk.terminate(); clearTimeout(obTimer); obAbort.abort(); }
   }
   await Promise.race([rev, new Promise(r => setTimeout(r, 2500))]);
   // 4) batas lahan, ukuran riil, anotasi
@@ -545,6 +617,7 @@ export async function capture(app, { shape, box, o, setProg = () => { }, L = () 
       `${u0.label}: E ${fmtM(u0.E, 3)}  N ${fmtM(u0.N, 3)}`,
       site ? `Luas lahan ${fmtM(site.area)} m², keliling ${fmtM(site.per)} m` : null,
       `Sumber: Google Maps${photoInfo ? ' — ' + photoInfo : ''}. Proyeksi bidang lokal WGS84 (jarak = jarak riil).`,
+      obUsed ? `Jejak ${obUsed} bangunan: Google Open Buildings, Microsoft Building Footprints & © kontributor OpenStreetMap (gabungan VIDA, ODbL).` : null,
       `Satuan gambar ${units}; ukuran batas dalam meter. Akurasi posisi mengikuti data peta, verifikasi dengan ukur lapangan.`,
     ].filter(Boolean);
     const wrap = (t, n = 78) => { const out = []; let cur = ''; for (const w of t.split(' ')) { if ((cur + ' ' + w).trim().length > n) { out.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) out.push(cur.trim()); return out; };
